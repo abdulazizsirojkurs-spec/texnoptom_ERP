@@ -673,7 +673,7 @@ export default function WarehousePage() {
                   <tr key={bal.product_id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '12px 8px', fontWeight: 'bold' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {isLowStock && <AlertCircle size={16} color="#dc2626" title="Zaxira tugayapti!" />}
+                        {isLowStock && <AlertCircle size={16} color="#dc2626" />}
                         {bal.products?.name}
                       </div>
                     </td>
