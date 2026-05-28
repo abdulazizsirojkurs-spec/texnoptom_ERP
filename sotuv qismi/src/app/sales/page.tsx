@@ -230,29 +230,27 @@ function SalesContent() {
     }
     setTgLoading(true);
     try {
-      if (!receiptRef.current) throw new Error("Chek topilmadi");
-      const canvas = await html2canvas(receiptRef.current, { scale: 3, backgroundColor: '#ffffff' });
+      const pdf = await generatePDFBlob();
+      if (!pdf) throw new Error("PDF yaratib bo'lmadi");
       
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-      if (!blob) throw new Error("Rasm yaratib bo'lmadi");
-      
+      const pdfBlob = pdf.output('blob');
       const BOT_TOKEN = '8836661106:AAHONQVRFa1i2rJb_elGJda2uiYuNYHQKqA';
       const CHAT_ID = '-1003835518318';
       
       const formData = new FormData();
       formData.append('chat_id', CHAT_ID);
-      formData.append('photo', blob, `Chek_TOG-${nextOrderCode}.png`);
+      formData.append('document', pdfBlob, `Buyurtma_TOG-${nextOrderCode}_${customerName || 'Mijoz'}.pdf`);
       
-      const caption = `🛒 Buyurtma: #TOG-${nextOrderCode}\n👤 Mijoz: ${customerName || 'Kiritilmagan'}\n📞 Tel: ${phone || 'Kiritilmagan'}`;
+      const caption = `🛒 ${editOrderId ? 'Tahrirlangan' : 'Yangi'} Buyurtma: #TOG-${nextOrderCode}\n👤 Mijoz: ${customerName || 'Kiritilmagan'}\n📞 Tel: ${phone || 'Kiritilmagan'}\n💰 Summa: ${totalUzs.toLocaleString('uz-UZ')} so'm\n💳 To'lov turi: ${salesChannel || 'Kiritilmagan'}\n👨‍💻 Sotuvchi: ${sellerName}`;
       formData.append('caption', caption);
 
-      const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) throw new Error("Telegram serveriga yuborishda xatolik");
-      alert("Chek muvaffaqiyatli Telegram guruhga rasm bo'lib yuborildi! 🚀");
+      alert("Chek muvaffaqiyatli Telegram guruhga yuborildi! 🚀");
     } catch (error) {
       alert("Telegramga yuborib bo'lmadi.");
     } finally {
