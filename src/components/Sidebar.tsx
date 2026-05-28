@@ -9,7 +9,8 @@ export default function Sidebar() {
 
   const navItems = [
     { name: 'Dashboard', href: '/', icon: Home, roles: ['admin'] },
-    { name: 'Sotuv', href: '/sales', icon: ShoppingCart, roles: ['admin', 'sotuvchi', 'kassir'] },
+    { name: 'Yangi Sotuv', href: '/sales', icon: ShoppingCart, roles: ['admin', 'sotuvchi', 'kassir'] },
+    { name: 'Buyurtmalar', href: '/sales/orders', icon: ShoppingCart, roles: ['admin', 'sotuvchi'] },
     { name: 'Ombor', href: '/warehouse', icon: Package, roles: ['admin', 'skladchi'] },
     { name: 'Moliya', href: '/finance', icon: DollarSign, roles: ['admin'] },
   ];
