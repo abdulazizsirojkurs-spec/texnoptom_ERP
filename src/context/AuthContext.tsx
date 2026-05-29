@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 
 type AuthContextType = {
   user: any;
-  role: 'admin' | 'skladchi' | 'sotuvchi' | null;
+  role: 'admin' | 'skladchi' | 'sotuvchi' | 'buxgalter' | null;
   loading: boolean;
   signOut: () => Promise<void>;
 };
@@ -14,7 +14,7 @@ const AuthContext = createContext<AuthContextType>({ user: null, role: null, loa
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<any>(null);
-  const [role, setRole] = useState<'admin' | 'skladchi' | 'sotuvchi' | null>(null);
+  const [role, setRole] = useState<'admin' | 'skladchi' | 'sotuvchi' | 'buxgalter' | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
@@ -69,6 +69,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setRole(metaRole);
     } else if (email === 'admin@texno.uz' || email.includes('admin') || email === 'xontorayevabdulaziz@gmail.com') {
       setRole('admin');
+    } else if (email.includes('buxgalter') || email.includes('moliya')) {
+      // Pochtada "buxgalter" yoki "moliya" bo'lsa Buxgalter bo'ladi
+      setRole('buxgalter');
     } else if (email.includes('sklad') || email.includes('ombor')) {
       // Pochtada "sklad" yoki "ombor" bo'lsa Skladchi bo'ladi
       setRole('skladchi');
