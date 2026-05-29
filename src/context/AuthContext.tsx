@@ -69,6 +69,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setRole(metaRole);
     } else if (email === 'admin@texno.uz' || email.includes('admin') || email === 'xontorayevabdulaziz@gmail.com') {
       setRole('admin');
+    } else if (email.includes('sklad') || email.includes('ombor')) {
+      // Pochtada "sklad" yoki "ombor" bo'lsa Skladchi bo'ladi
+      setRole('skladchi');
     } else if (email.includes('sotuvchi') || email === 'begoyim@texno.uz' || email === 'farzona@texno.uz') {
       setRole('sotuvchi');
     } else {
