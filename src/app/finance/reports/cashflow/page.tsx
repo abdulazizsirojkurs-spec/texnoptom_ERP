@@ -46,7 +46,8 @@ export default function CashFlowPage() {
       if (data) {
         data.forEach(tx => {
           const m = new Date(tx.txn_date).getMonth();
-          const section = tx.chart_of_accounts?.pnl_section;
+          const chartAcc: any = tx.chart_of_accounts;
+          const section = Array.isArray(chartAcc) ? chartAcc[0]?.pnl_section : chartAcc?.pnl_section;
           
           if (section === 'revenue' || section === 'other_income') {
             grouped.operational_in[m] += tx.income_uzs;

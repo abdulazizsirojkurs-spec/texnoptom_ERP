@@ -138,7 +138,7 @@ export default function KassaPage() {
                   <tr key={t.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.95rem' }}>
                     <td style={{ padding: '12px' }}>{new Date(t.txn_date).toLocaleDateString('uz-UZ')}</td>
                     <td style={{ padding: '12px' }}>{t.cash_accounts?.name}</td>
-                    <td style={{ padding: '12px' }}>{t.chart_of_accounts?.name}</td>
+                    <td style={{ padding: '12px' }}>{Array.isArray(t.chart_of_accounts) ? t.chart_of_accounts[0]?.name : (t.chart_of_accounts as any)?.name}</td>
                     <td style={{ padding: '12px' }}>{t.suppliers?.name || t.customer_name || '-'}</td>
                     
                     <td style={{ padding: '12px', color: '#10b981', fontWeight: t.income > 0 ? 'bold' : 'normal' }}>
