@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 
 type AuthContextType = {
   user: any;
-  role: 'admin' | 'skladchi' | null;
+  role: 'admin' | 'skladchi' | 'sotuvchi' | null;
   loading: boolean;
   signOut: () => Promise<void>;
 };
@@ -14,7 +14,7 @@ const AuthContext = createContext<AuthContextType>({ user: null, role: null, loa
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<any>(null);
-  const [role, setRole] = useState<'admin' | 'skladchi' | null>(null);
+  const [role, setRole] = useState<'admin' | 'skladchi' | 'sotuvchi' | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
@@ -31,7 +31,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (mounted) {
         setUser(currentUser);
         if (currentUser) {
-          await fetchRole(currentUser.id, currentUser.email);
+          await fetchRole(currentUser);
         } else {
           setRole(null);
           setLoading(false);
@@ -46,7 +46,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (mounted) {
         setUser(currentUser);
         if (currentUser) {
-          await fetchRole(currentUser.id, currentUser.email);
+          await fetchRole(currentUser);
         } else {
           setRole(null);
           setLoading(false);
@@ -61,13 +61,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [router]);
 
-  async function fetchRole(userId: string, email?: string) {
-    if (!email) {
-      setRole('skladchi');
+  async function fetchRole(currentUser: any) {
+    const email = currentUser?.email || '';
+    const metaRole = currentUser?.user_metadata?.role;
+
+    if (metaRole) {
+      setRole(metaRole);
     } else if (email === 'admin@texno.uz' || email.includes('admin') || email === 'xontorayevabdulaziz@gmail.com') {
       setRole('admin');
+    } else if (email.includes('sotuvchi') || email === 'begoyim@texno.uz' || email === 'farzona@texno.uz') {
+      setRole('sotuvchi');
     } else {
-      setRole('skladchi');
+      // Boshqa har qanday yangi profil avtomat 'sotuvchi' bo'ladi
+      setRole('sotuvchi'); 
     }
     setLoading(false);
   }

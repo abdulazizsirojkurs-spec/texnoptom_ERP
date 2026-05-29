@@ -25,6 +25,7 @@ export default function Sidebar() {
         </Link>
 
         {/* Sotuv (Group) */}
+        {(role === 'admin' || role === 'sotuvchi') && (
         <div className="nav-group">
           <div 
             className="nav-item" 
@@ -48,11 +49,14 @@ export default function Sidebar() {
             </div>
           )}
         </div>
+        )}
 
         {/* Ombor */}
+        {(role === 'admin' || role === 'skladchi') && (
         <Link href="/warehouse" className={`nav-item ${pathname === '/warehouse' ? 'active' : ''}`}>
           <Package size={20} /> Ombor
         </Link>
+        )}
 
         {/* Moliya */}
         {role === 'admin' && (
