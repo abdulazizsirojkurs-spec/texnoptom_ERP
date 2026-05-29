@@ -58,9 +58,9 @@ export default function PnLPage() {
     }
   };
 
-  const calculateTotal = (sectionData: any, monthIndex: number) => {
+  const calculateTotal = (sectionData: any, monthIndex: number): number => {
     if (!sectionData) return 0;
-    return Object.values(sectionData).reduce((sum: any, arr: any) => sum + (arr[monthIndex] || 0), 0);
+    return Object.values(sectionData).reduce((sum: number, arr: any) => sum + (Number(arr[monthIndex]) || 0), 0);
   };
 
   const formatUzs = (val: number) => {
