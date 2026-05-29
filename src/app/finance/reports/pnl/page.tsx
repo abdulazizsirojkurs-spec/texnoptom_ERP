@@ -87,7 +87,7 @@ export default function PnLPage() {
   };
 
   const renderSubTotal = (label: string, sectionKey: string, isNegative = false) => {
-    const arr = MONTHS.map((_, i) => calculateTotal(pnlData[sectionKey], i));
+    const arr: number[] = MONTHS.map((_, i) => Number(calculateTotal(pnlData[sectionKey], i)) || 0);
     const total = arr.reduce((a, b) => a + b, 0);
     return (
       <tr style={{ backgroundColor: '#f0f9ff', fontWeight: 'bold', borderBottom: '1px solid var(--border)' }}>
