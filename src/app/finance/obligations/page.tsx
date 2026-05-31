@@ -133,7 +133,7 @@ export default function ObligationsPage() {
             <h2 style={{ marginBottom: '20px' }}>Yangi Majburiyat</h2>
             <form onSubmit={handleSubmit}>
               
-              <div style={{ marginBottom: '16px', display: 'flex', gap: '16px' }}>
+              <div className="flex-mobile-col" style={{ marginBottom: '16px', display: 'flex', gap: '16px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Sana</label>
                   <input required type="date" className="input-field" style={{ width: '100%' }} value={formData.obligation_date} onChange={e => setFormData({...formData, obligation_date: e.target.value})} />

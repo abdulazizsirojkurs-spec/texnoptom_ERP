@@ -161,7 +161,7 @@ export default function FixedAssetsPage() {
                 <input required type="text" className="input-field" style={{ width: '100%' }} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
               </div>
               
-              <div style={{ marginBottom: '16px', display: 'flex', gap: '16px' }}>
+              <div className="flex-mobile-col" style={{ marginBottom: '16px', display: 'flex', gap: '16px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Kategoriya</label>
                   <input type="text" className="input-field" style={{ width: '100%' }} value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} placeholder="Masalan: Mebel, Texnika" />
@@ -172,7 +172,7 @@ export default function FixedAssetsPage() {
                 </div>
               </div>
 
-              <div style={{ marginBottom: '24px', display: 'flex', gap: '16px' }}>
+              <div className="flex-mobile-col" style={{ marginBottom: '24px', display: 'flex', gap: '16px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Qiymati (UZS)</label>
                   <input required type="number" min="0" className="input-field" style={{ width: '100%' }} value={formData.acquisition_cost} onChange={e => setFormData({...formData, acquisition_cost: e.target.value})} />

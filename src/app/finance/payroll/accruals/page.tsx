@@ -145,7 +145,7 @@ export default function PayrollAccrualsPage() {
                 </select>
               </div>
 
-              <div style={{ marginBottom: '16px', display: 'flex', gap: '16px' }}>
+              <div className="flex-mobile-col" style={{ marginBottom: '16px', display: 'flex', gap: '16px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Sana</label>
                   <input required type="date" className="input-field" style={{ width: '100%' }} value={formData.accrual_date} onChange={e => setFormData({...formData, accrual_date: e.target.value})} />
