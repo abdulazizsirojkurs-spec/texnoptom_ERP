@@ -111,6 +111,20 @@ export default function SalesOrdersPage() {
     router.push(`/sales?edit=${orderId}`);
   };
 
+  // Buyurtmaning tan narxi (UZS) va marjasini hisoblaydi.
+  // Agar biror tovarda unit_cost_usd bo'lmasa (eski buyurtma yoki ombor tan narxi kiritilmagan), null qaytaradi.
+  const getMargin = (order: any) => {
+    const items = order.sales_order_items || [];
+    if (items.length === 0) return null;
+    const hasMissingCost = items.some((it: any) => it.unit_cost_usd === null || it.unit_cost_usd === undefined);
+    if (hasMissingCost) return null;
+
+    const totalCostUsd = items.reduce((sum: number, it: any) => sum + Number(it.unit_cost_usd) * Number(it.quantity), 0);
+    const totalCostUzs = totalCostUsd * Number(order.exchange_rate || 0);
+    const margin = Number(order.total_uzs_price || 0) - totalCostUzs;
+    return { totalCostUzs, margin };
+  };
+
   const getStatusBadge = (status: string, is_shipped: boolean) => {
     // Agar status aniq bitta o'rnatilgan bo'lsa uni tekshiramiz.
     // Asosiy statuslar: Yangi buyurtma, Otgruzka qilindi, Yopildi, Rad etildi, Vozvrat qilindi
@@ -205,6 +219,8 @@ export default function SalesOrdersPage() {
                 <th style={{ padding: '16px' }}>Mijoz</th>
                 <th style={{ padding: '16px' }}>To'lov turi</th>
                 <th style={{ padding: '16px' }}>Summa (so'm)</th>
+                <th style={{ padding: '16px' }}>Tan narx</th>
+                <th style={{ padding: '16px' }}>Marja</th>
                 <th style={{ padding: '16px' }}>Sana</th>
                 <th style={{ padding: '16px' }}>Status</th>
                 {role === 'admin' && <th style={{ padding: '16px', textAlign: 'right' }}>Amallar</th>}
@@ -213,7 +229,7 @@ export default function SalesOrdersPage() {
             <tbody>
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '24px', textAlign: 'center' }}>Hozircha buyurtmalar yo'q.</td>
+                  <td colSpan={9} style={{ padding: '24px', textAlign: 'center' }}>Hozircha buyurtmalar yo'q.</td>
                 </tr>
               ) : (
                 orders.map(order => (
@@ -231,6 +247,26 @@ export default function SalesOrdersPage() {
                       {order.contract_number && <div style={{ fontSize: '0.8rem', color: '#ef4444' }}>Shartnoma: {order.contract_number}</div>}
                     </td>
                     <td style={{ padding: '16px', fontWeight: 'bold' }}>{Number(order.total_uzs_price).toLocaleString('uz-UZ')}</td>
+                    {(() => {
+                      const m = getMargin(order);
+                      if (!m) {
+                        return (
+                          <>
+                            <td style={{ padding: '16px', color: '#94a3b8', fontSize: '0.85rem' }}>—</td>
+                            <td style={{ padding: '16px', color: '#94a3b8', fontSize: '0.85rem' }}>Noma'lum</td>
+                          </>
+                        );
+                      }
+                      const isPositive = m.margin >= 0;
+                      return (
+                        <>
+                          <td style={{ padding: '16px', color: '#64748b' }}>{Math.round(m.totalCostUzs).toLocaleString('uz-UZ')}</td>
+                          <td style={{ padding: '16px', fontWeight: 'bold', color: isPositive ? '#15803d' : '#dc2626' }}>
+                            {isPositive ? '+' : ''}{Math.round(m.margin).toLocaleString('uz-UZ')}
+                          </td>
+                        </>
+                      );
+                    })()}
                     <td style={{ padding: '16px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                       {new Date(order.created_at).toLocaleDateString('uz-UZ')}
                     </td>

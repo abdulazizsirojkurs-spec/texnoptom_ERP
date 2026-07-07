@@ -116,6 +116,7 @@ function SalesContent() {
   const [exchangeRate, setExchangeRate] = useState('');
   
   const [products, setProducts] = useState<any[]>([]);
+  const [costMap, setCostMap] = useState<Record<string, number>>({});
   const [selectedItems, setSelectedItems] = useState<Record<string, { product_id: string, product_name: string, quantity: number }>>({});
   
   const [loading, setLoading] = useState(false);
@@ -132,6 +133,14 @@ function SalesContent() {
       // Tovarlarni olish
       const { data: pData } = await supabase.from('products').select('*, categories(name)');
       if (pData) setProducts(pData);
+
+      // Har bir tovarning joriy tan narxini (average_price) olish — sotuv marjasini hisoblash uchun
+      const { data: invData } = await supabase.from('inventory_balances').select('product_id, average_price');
+      if (invData) {
+        const map: Record<string, number> = {};
+        invData.forEach((row: any) => { map[row.product_id] = Number(row.average_price) || 0; });
+        setCostMap(map);
+      }
 
       if (editOrderId) {
         // Tahrirlash uchun ma'lumotlarni yuklash
@@ -304,9 +313,11 @@ function SalesContent() {
       }
 
       // Tovarlarni kiritish (yangi yoki tahrirlangan buyurtmaga)
+      // unit_cost_usd — shu paytdagi tan narx suratga olinadi (keyin narx o'zgarsa ham marja to'g'ri qoladi)
       const orderItemsToInsert = itemsList.map(item => ({
         order_id: currentOrderId, category_name: item.category,
-        product_id: item.product_id, product_name: item.product_name, quantity: item.quantity
+        product_id: item.product_id, product_name: item.product_name, quantity: item.quantity,
+        unit_cost_usd: costMap[item.product_id] ?? null
       }));
       const { error: itemsError } = await supabase.from('sales_order_items').insert(orderItemsToInsert);
       if (itemsError) throw itemsError;
