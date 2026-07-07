@@ -62,24 +62,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [router]);
 
   async function fetchRole(currentUser: any) {
-    const email = currentUser?.email || '';
-    const metaRole = currentUser?.user_metadata?.role;
+    // Rol endi bazadagi `profiles` jadvalidan olinadi (server tomonidan RLS bilan
+    // himoyalangan haqiqiy manba) — email matnidan taxmin qilish xavfsiz emas edi.
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', currentUser.id)
+      .single();
 
-    if (metaRole) {
-      setRole(metaRole);
-    } else if (email === 'admin@texno.uz' || email.includes('admin') || email === 'xontorayevabdulaziz@gmail.com') {
-      setRole('admin');
-    } else if (email.includes('buxgalter') || email.includes('moliya')) {
-      // Pochtada "buxgalter" yoki "moliya" bo'lsa Buxgalter bo'ladi
-      setRole('buxgalter');
-    } else if (email.includes('sklad') || email.includes('ombor')) {
-      // Pochtada "sklad" yoki "ombor" bo'lsa Skladchi bo'ladi
-      setRole('skladchi');
-    } else if (email.includes('sotuvchi') || email === 'begoyim@texno.uz' || email === 'farzona@texno.uz') {
-      setRole('sotuvchi');
+    if (error || !data) {
+      console.error('Rol topilmadi:', error?.message);
+      setRole('sotuvchi'); // eng kam huquqli rol — xavfsiz standart holat
     } else {
-      // Boshqa har qanday yangi profil avtomat 'sotuvchi' bo'ladi
-      setRole('sotuvchi'); 
+      setRole(data.role);
     }
     setLoading(false);
   }
