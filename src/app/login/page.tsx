@@ -30,16 +30,7 @@ export default function LoginPage() {
 
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      
-      if (error && (email === 'admin@texno.uz' || email === 'skladchi@texno.uz')) {
-         // Auto-create predefined users if they don't exist on first login
-         const { error: regError } = await supabase.auth.signUp({ email, password });
-         if (regError) throw regError;
-         // After successful signup, signInWithPassword isn't necessary because session is established, but just in case
-         await supabase.auth.signInWithPassword({ email, password });
-      } else if (error) {
-         throw error;
-      }
+      if (error) throw error;
     } catch (err: any) {
       setError(err.message === 'Invalid login credentials' ? "Login yoki parol noto'g'ri!" : err.message);
     } finally {
