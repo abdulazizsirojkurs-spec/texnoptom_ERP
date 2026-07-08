@@ -2,6 +2,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 
+const REQUIRES_CONTRACT = [
+  'Uzum Nasiya', 'Anor Nasiya', 'Paylater', 'Open Card',
+  'Perechesleniya', 'Yarim nasiya yarim naqt',
+];
+
 export default function DebtsPage() {
   const [activeTab, setActiveTab] = useState('suppliers');
   
@@ -24,30 +29,12 @@ export default function DebtsPage() {
   const fetchSuppliersDebts = async () => {
     setSuppliersLoading(true);
     try {
-      // 1. Postavshiklarni olamiz
-      const { data: sups, error: supErr } = await supabase.from('suppliers').select('*');
+      // suppliers.balance — yagona ishonchli manba (USD): tovar kelganda ko'payadi,
+      // Kassa'da to'lov qilinganda (postavshik tanlansa) kamayadi. receipt_docs/cash_transactions'dan
+      // qayta hisoblash AVVAL ishlatilardi, lekin valyutalar (USD/UZS) aralashib, noto'g'ri natija berardi.
+      const { data: sups, error: supErr } = await supabase.from('suppliers').select('*').order('name');
       if (supErr) throw supErr;
-
-      // 2. Receipt docs (Olingan tovar) yig'indisi
-      const { data: receipts } = await supabase.from('receipt_docs').select('supplier_id, total_amount');
-      
-      // 3. To'langan summa (cash_transactions dan cogs yoki supplier_id bo'yicha)
-      const { data: payments } = await supabase.from('cash_transactions').select('supplier_id, expense_uzs').not('supplier_id', 'is', null);
-
-      const aggregated = (sups || []).map(sup => {
-        // Hozircha receipt_docs USD da bo'lishi mumkin, uni UZS ga o'girish kerak. Lekin soddalik uchun to'g'ridan to'g'ri olamiz
-        const totalReceived = (receipts || []).filter(r => r.supplier_id === sup.id).reduce((a, b) => a + Number(b.total_amount), 0);
-        const totalPaid = (payments || []).filter(p => p.supplier_id === sup.id).reduce((a, b) => a + Number(b.expense_uzs), 0);
-        
-        return {
-          ...sup,
-          received: totalReceived,
-          paid: totalPaid,
-          debt: totalReceived - totalPaid
-        };
-      });
-
-      setSuppliersData(aggregated);
+      setSuppliersData(sups || []);
     } catch (error) {
       console.error(error);
     } finally {
@@ -58,23 +45,37 @@ export default function DebtsPage() {
   const fetchChannelsDebts = async () => {
     setChannelsLoading(true);
     try {
-      const { data, error } = await supabase.from('v_customer_debt_by_channel').select('*');
+      // v_customer_debt_by_channel ishonchsiz chiqdi (naqd to'langan sotuvlarni ham
+      // qarz deb hisoblagan). Shuning uchun faqat haqiqiy nasiya/perechisleniya
+      // kanallarini "qarz" deb hisoblaymiz, qolganini to'liq to'langan deb qabul qilamiz.
+      const { data, error } = await supabase
+        .from('sales_orders')
+        .select('sales_channel, total_uzs_price, is_shipped');
       if (error) throw error;
-      setChannelsData(data || []);
+
+      const grouped: Record<string, { total_sold: number; debt: number }> = {};
+      (data || []).forEach((o: any) => {
+        const ch = o.sales_channel || 'Noma\'lum';
+        if (!grouped[ch]) grouped[ch] = { total_sold: 0, debt: 0 };
+        grouped[ch].total_sold += Number(o.total_uzs_price) || 0;
+        if (REQUIRES_CONTRACT.includes(ch) && o.is_shipped) {
+          grouped[ch].debt += Number(o.total_uzs_price) || 0;
+        }
+      });
+
+      setChannelsData(Object.entries(grouped).map(([sales_channel, v]) => ({
+        sales_channel, total_sold: v.total_sold, total_paid: v.total_sold - v.debt, debt: v.debt,
+      })));
     } catch (error) {
       console.error(error);
-      // Agar v_customer_debt_by_channel ishlamasa, fallback:
-      setChannelsData([
-        { sales_channel: 'Telegram', total_sold: 50000000, total_paid: 45000000, debt: 5000000 },
-        { sales_channel: 'Uzum Market', total_sold: 120000000, total_paid: 110000000, debt: 10000000 },
-        { sales_channel: 'Do\'kon', total_sold: 80000000, total_paid: 80000000, debt: 0 },
-      ]);
+      setChannelsData([]);
     } finally {
       setChannelsLoading(false);
     }
   };
 
   const formatUzs = (val: number) => val?.toLocaleString('uz-UZ') + " so'm";
+  const formatUsd = (val: number) => '$' + Number(val || 0).toLocaleString('uz-UZ');
 
   return (
     <div>
@@ -116,29 +117,26 @@ export default function DebtsPage() {
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', backgroundColor: '#f8fafc' }}>
                     <th style={{ padding: '12px' }}>Postavshik nomi</th>
-                    <th style={{ padding: '12px' }}>Telefon</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>Olingan tovar</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>To'langan summa</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>Qolgan qarz</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>Qolgan qarz ($)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {suppliersData.length === 0 ? (
-                    <tr><td colSpan={5} style={{ padding: '20px', textAlign: 'center' }}>Ma'lumot topilmadi.</td></tr>
+                    <tr><td colSpan={2} style={{ padding: '20px', textAlign: 'center' }}>Ma'lumot topilmadi.</td></tr>
                   ) : suppliersData.map(sup => (
                     <tr key={sup.id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '12px', fontWeight: 'bold' }}>{sup.name}</td>
-                      <td style={{ padding: '12px' }}>{sup.phone}</td>
-                      <td style={{ padding: '12px', textAlign: 'right' }}>{formatUzs(sup.received)}</td>
-                      <td style={{ padding: '12px', textAlign: 'right', color: '#10b981' }}>{formatUzs(sup.paid)}</td>
-                      <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: sup.debt > 0 ? '#ef4444' : 'inherit' }}>
-                        {formatUzs(sup.debt)}
+                      <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: sup.balance > 0 ? '#ef4444' : sup.balance < 0 ? '#10b981' : 'inherit' }}>
+                        {formatUsd(sup.balance)}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '12px' }}>
+              Musbat ($) — biz postavshikka qarzmiz. Manfiy — postavshik bizga ortiqcha qaytarishi kerak (haddan tashqari to'lov).
+            </p>
           </>
         )}
 

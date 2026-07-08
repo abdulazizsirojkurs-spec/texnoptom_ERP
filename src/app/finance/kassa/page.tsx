@@ -6,6 +6,7 @@ import { ArrowDownCircle, ArrowUpCircle, Download, Edit, Trash2, X, Check } from
 
 type CashAccount = { id: string; name: string; currency: string };
 type ChartAccount = { id: string; code: string; name: string; flow_sign: '+' | '-'; group_name: string };
+type Supplier = { id: string; name: string; balance: number };
 
 export default function KassaPage() {
   const { user } = useAuth();
@@ -13,6 +14,7 @@ export default function KassaPage() {
   const [loading, setLoading] = useState(true);
   const [cashAccounts, setCashAccounts] = useState<CashAccount[]>([]);
   const [chartAccounts, setChartAccounts] = useState<ChartAccount[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   // Filters
   const [startDate, setStartDate] = useState('');
@@ -28,6 +30,8 @@ export default function KassaPage() {
   const [accountCode, setAccountCode] = useState('');
   const [exchangeRate, setExchangeRate] = useState('');
   const [note, setNote] = useState('');
+  const [supplierId, setSupplierId] = useState('');
+  const [supplierUsdAmount, setSupplierUsdAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState('');
   const amountRef = useRef<HTMLInputElement>(null);
@@ -43,12 +47,14 @@ export default function KassaPage() {
   const fetchRefData = async () => {
     const { data: ca } = await supabase.from('cash_accounts').select('id, name, currency').eq('is_active', true).eq('is_virtual', false).order('sort_order');
     const { data: coa } = await supabase.from('chart_of_accounts').select('id, code, name, flow_sign, group_name').eq('is_active', true).order('sort_order');
+    const { data: sup } = await supabase.from('suppliers').select('id, name, balance').order('name');
     if (ca) {
       setCashAccounts(ca);
       const savedCash = localStorage.getItem('kassa_last_account');
       setCashAccountId(savedCash && ca.find(c => c.id === savedCash) ? savedCash : (ca[0]?.id || ''));
     }
     if (coa) setChartAccounts(coa);
+    if (sup) setSuppliers(sup);
   };
 
   const fetchTransactions = async () => {
@@ -86,6 +92,8 @@ export default function KassaPage() {
     setEditingId(null);
     setAmount('');
     setNote('');
+    setSupplierId('');
+    setSupplierUsdAmount('');
     if (!keepContext) {
       setDirection('expense');
       setAccountCode('');
@@ -131,6 +139,10 @@ export default function KassaPage() {
       alert("USD hisob uchun kurs kiritilishi shart!");
       return;
     }
+    if (supplierId && direction === 'expense' && !supplierUsdAmount) {
+      alert("Postavshik balansidan yechiladigan summani ($) kiriting!");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -142,6 +154,7 @@ export default function KassaPage() {
         account_code: accountCode,
         exchange_rate: needsExchangeRate ? Number(exchangeRate) : null,
         comment: note || null,
+        supplier_id: supplierId || null,
         created_by: user?.id || null,
       };
 
@@ -152,12 +165,23 @@ export default function KassaPage() {
       } else {
         const { error } = await supabase.from('cash_transactions').insert(payload);
         if (error) throw error;
+
+        // Postavshikka to'lov qilingan bo'lsa, uning USD balansini kamaytiramiz
+        // (faqat yangi yozuvda — tahrirlashda balans avtomatik qayta hisoblanmaydi)
+        if (supplierId && direction === 'expense' && supplierUsdAmount) {
+          const sup = suppliers.find(s => s.id === supplierId);
+          if (sup) {
+            await supabase.from('suppliers').update({ balance: Number(sup.balance) - Number(supplierUsdAmount) }).eq('id', supplierId);
+          }
+        }
+
         setFlash(direction === 'income' ? "Kirim saqlandi ✓" : "Chiqim saqlandi ✓");
       }
 
       localStorage.setItem('kassa_last_account', cashAccountId);
       resetForm(true);
       fetchTransactions();
+      fetchRefData(); // postavshik balansi yangilangan bo'lishi mumkin
       setTimeout(() => setFlash(''), 2000);
     } catch (err: any) {
       alert('Xatolik: ' + err.message);
@@ -265,13 +289,40 @@ export default function KassaPage() {
 
         <div style={{ display: 'flex', gap: '12px', marginTop: '12px', alignItems: 'end' }}>
           <div style={{ flex: 1 }}>
-            <label className="field-label">Izoh / Postavshik-mijoz (ixtiyoriy)</label>
+            <label className="field-label">Izoh (ixtiyoriy)</label>
             <input type="text" className="input-field" placeholder="Masalan: Arenda to'lovi, iyul oyi" value={note} onChange={e => setNote(e.target.value)} />
           </div>
           <button type="submit" disabled={saving} className="btn btn-primary" style={{ padding: '10px 28px', fontWeight: 700, whiteSpace: 'nowrap' }}>
             {saving ? 'Saqlanmoqda...' : editingId ? 'Yangilash' : 'Saqlash'}
           </button>
         </div>
+
+        {direction === 'expense' && (
+          <div style={{ display: 'grid', gridTemplateColumns: supplierId ? '1fr 220px' : '1fr', gap: '12px', marginTop: '12px' }}>
+            <div>
+              <label className="field-label">Postavshikka to'lovmi? (ixtiyoriy)</label>
+              <select className="input-field" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+                <option value="">Yo'q — oddiy xarajat</option>
+                {suppliers.map(s => (
+                  <option key={s.id} value={s.id}>{s.name} (joriy qarz: ${Number(s.balance).toLocaleString('uz-UZ')})</option>
+                ))}
+              </select>
+            </div>
+            {supplierId && (
+              <div>
+                <label className="field-label">Balansdan yechiladigan summa ($)</label>
+                <input
+                  type="number"
+                  className="input-field"
+                  placeholder="0"
+                  value={supplierUsdAmount}
+                  onChange={e => setSupplierUsdAmount(e.target.value)}
+                  style={{ borderColor: '#f59e0b', background: '#fffbeb' }}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </form>
 
       {/* Filters */}
