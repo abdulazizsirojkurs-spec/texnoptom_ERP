@@ -41,7 +41,7 @@ export default function KassaPage() {
   }, [startDate, endDate, typeFilter]);
 
   const fetchRefData = async () => {
-    const { data: ca } = await supabase.from('cash_accounts').select('id, name, currency').eq('is_active', true).order('sort_order');
+    const { data: ca } = await supabase.from('cash_accounts').select('id, name, currency').eq('is_active', true).eq('is_virtual', false).order('sort_order');
     const { data: coa } = await supabase.from('chart_of_accounts').select('id, code, name, flow_sign, group_name').eq('is_active', true).order('sort_order');
     if (ca) {
       setCashAccounts(ca);

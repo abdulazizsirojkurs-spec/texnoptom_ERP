@@ -97,8 +97,9 @@ export default function Home() {
         // Kassa (UZS hisoblar) va Bank/valyuta (USD hisoblar) joriy qoldig'i
         const { data: txns } = await supabase
           .from('cash_transactions')
-          .select('income, expense, income_uzs, expense_uzs, cash_accounts(currency)');
+          .select('income, expense, income_uzs, expense_uzs, cash_accounts(currency, is_virtual)');
         (txns || []).forEach((t: any) => {
+          if (t.cash_accounts?.is_virtual) return; // P&L uchun avtomatik yozuv — haqiqiy kassa emas
           const currency = t.cash_accounts?.currency;
           if (currency === 'USD') {
             bankTotalUsd += (Number(t.income) || 0) - (Number(t.expense) || 0);

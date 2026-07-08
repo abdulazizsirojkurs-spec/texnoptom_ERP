@@ -27,6 +27,7 @@ export default function KassaBalancePage() {
         .from('cash_accounts')
         .select('*')
         .eq('is_active', true)
+        .eq('is_virtual', false) // "Buxgalteriya (P&L)" virtual hisobi haqiqiy kassa emas — bu yerda ko'rsatilmaydi
         .order('sort_order');
       
       const accList = accData || [];
