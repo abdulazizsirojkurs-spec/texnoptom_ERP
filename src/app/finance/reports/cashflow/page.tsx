@@ -21,17 +21,31 @@ export default function CashFlowPage() {
       const startOfYear = `${selectedYear}-01-01`;
       const endOfYear = `${selectedYear}-12-31`;
 
-      // Barcha tranzaksiyalarni tortib kelamiz
+      // MUHIM: "Buxgalteriya (P&L)" virtual hisobidagi yozuvlar bu yerga kirmasligi kerak —
+      // ular haqiqiy pul harakati emas (faqat P&L uchun avtomatik daromad/tan narx yozuvi).
+      // Cash Flow faqat HAQIQIY kassa harakatlarini ko'rsatishi kerak.
       const { data, error } = await supabase
         .from('cash_transactions')
         .select(`
           txn_date, income_uzs, expense_uzs,
-          chart_of_accounts(pnl_section)
+          chart_of_accounts(pnl_section),
+          cash_accounts!inner(is_virtual)
         `)
+        .eq('cash_accounts.is_virtual', false)
         .gte('txn_date', startOfYear)
         .lte('txn_date', endOfYear);
-      
+
       if (error) throw error;
+
+      // Boshlang'ich qoldiq: shu yil boshidan OLDINGI barcha haqiqiy tranzaksiyalar yig'indisi
+      const { data: priorTxns } = await supabase
+        .from('cash_transactions')
+        .select(`income_uzs, expense_uzs, cash_accounts!inner(is_virtual)`)
+        .eq('cash_accounts.is_virtual', false)
+        .lt('txn_date', startOfYear);
+      const realStartBalance = (priorTxns || []).reduce(
+        (s, t: any) => s + (Number(t.income_uzs) || 0) - (Number(t.expense_uzs) || 0), 0
+      );
 
       // Kategoriya bo'yicha guruhlaymiz
       const grouped: any = {
@@ -67,6 +81,7 @@ export default function CashFlowPage() {
         });
       }
 
+      grouped.startBalance = realStartBalance;
       setCfData(grouped);
     } catch (error) {
       console.error(error);
@@ -97,9 +112,8 @@ export default function CashFlowPage() {
   const totalNet = MONTHS.map((_, i) => opNet[i] + invNet[i] + finNet[i]);
   const ytd = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
 
-  // Kassa boshlang'ich va oxirgi qoldiqlarini simulyatsiya qilib (yoki bazadan tortib) qo'shamiz
-  // Hozirgi holatda oddiy boshlang'ich = 0 dan boshlaymiz, va har oynikini qo'shamiz
-  let runningStart = 0;
+  // Boshlang'ich qoldiq — shu yildan OLDINGI haqiqiy kassa qoldig'i (endi hardcoded 0 emas)
+  let runningStart = cfData.startBalance || 0;
   const startBal = MONTHS.map((_, i) => {
     const s = runningStart;
     runningStart += totalNet[i];
