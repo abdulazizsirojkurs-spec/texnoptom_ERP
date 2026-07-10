@@ -369,16 +369,28 @@ export default function SalesOrdersPage() {
                       <div style={{ fontWeight: 500 }}>{order.client_name}</div>
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{order.client_phone}</div>
                     </td>
-                    <td style={{ padding: '16px', minWidth: 220 }}>
+                    <td style={{ padding: '16px', minWidth: 240, maxWidth: 280 }}>
                       {(order.sales_order_items || []).length === 0 ? (
                         <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Tovar yo'q</span>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          {(order.sales_order_items || []).map((it: any) => (
-                            <div key={it.id} style={{ fontSize: '0.75rem', color: '#475569', lineHeight: 1.4 }}>
-                              {it.product_name || it.category_name} <span style={{ color: '#94a3b8' }}>× {it.quantity}</span>
-                            </div>
-                          ))}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {(order.sales_order_items || []).map((it: any) => {
+                            const name = it.product_name || it.category_name;
+                            return (
+                              <div
+                                key={it.id}
+                                title={`${name} × ${it.quantity}`}
+                                style={{
+                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+                                  background: '#f1f5f9', borderRadius: 6, padding: '3px 8px',
+                                  fontSize: '0.72rem', color: '#475569', lineHeight: 1.5,
+                                }}
+                              >
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                                <span style={{ flexShrink: 0, fontWeight: 700, color: '#64748b' }}>×{it.quantity}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </td>
