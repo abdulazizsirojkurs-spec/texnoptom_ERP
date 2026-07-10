@@ -7,11 +7,6 @@ import {
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
 
-const REQUIRES_CONTRACT = [
-  'Uzum Nasiya', 'Anor Nasiya', 'Paylater', 'Open Card',
-  'Perechesleniya', 'Yarim nasiya yarim naqt',
-];
-
 function StatCard({
   label, value, icon: Icon, tint, sub,
 }: { label: string; value: string; icon: any; tint: string; sub?: string }) {
@@ -113,13 +108,13 @@ export default function Home() {
         payable = (sup || []).reduce((s, r: any) => s + Math.max(0, Number(r.balance) || 0), 0);
       }
 
-      // Bizga qarzdorlar (AR) — faqat nasiya/perechisleniya kanallari bo'yicha jo'natilgan buyurtmalar
-      const { data: creditOrders } = await supabase
+      // Bizga qarzdorlar (AR) — faqat is_paid=false deb aniq belgilangan buyurtmalar
+      // (kanal bo'yicha taxmin qilish ishonchsiz chiqdi — buxgalter qo'lda belgilaydi)
+      const { data: unpaidOrders } = await supabase
         .from('sales_orders')
         .select('total_uzs_price')
-        .in('sales_channel', REQUIRES_CONTRACT)
-        .eq('is_shipped', true);
-      receivable = (creditOrders || []).reduce((s, r: any) => s + (Number(r.total_uzs_price) || 0), 0);
+        .eq('is_paid', false);
+      receivable = (unpaidOrders || []).reduce((s, r: any) => s + (Number(r.total_uzs_price) || 0), 0);
 
       setData({
         todaySales, todayProfit, cashTotal, bankTotalUsd,
@@ -162,7 +157,7 @@ export default function Home() {
 
           <div className="stat-grid" style={{ marginBottom: 'var(--space-6)' }}>
             <StatCard label="Ombor qiymati" value={fmt(data.inventoryValueUzs)} icon={Boxes} tint="icon-tint-blue" sub="Tan narx bo'yicha, taxminiy kursda" />
-            <StatCard label="Bizga qarzdorlar (AR)" value={fmt(data.receivable)} icon={ArrowDownToLine} tint="icon-tint-green" sub="Nasiya/perechisleniya bo'yicha" />
+            <StatCard label="Bizga qarzdorlar (AR)" value={fmt(data.receivable)} icon={ArrowDownToLine} tint="icon-tint-green" sub="To'lanmagan deb belgilangan buyurtmalar" />
             {canSeeFinance ? (
               <StatCard label="Biz qarzdormiz (AP)" value={fmt(data.payable)} icon={ArrowUpFromLine} tint="icon-tint-red" />
             ) : (

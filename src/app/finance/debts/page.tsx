@@ -2,19 +2,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 
-const REQUIRES_CONTRACT = [
-  'Uzum Nasiya', 'Anor Nasiya', 'Paylater', 'Open Card',
-  'Perechesleniya', 'Yarim nasiya yarim naqt',
-];
-
 export default function DebtsPage() {
   const [activeTab, setActiveTab] = useState('suppliers');
-  
+
   // Postavshiklar
   const [suppliersLoading, setSuppliersLoading] = useState(true);
   const [suppliersData, setSuppliersData] = useState<any[]>([]);
 
-  // Mijozlar (Kanallar)
+  // Mijozlar (to'lanmagan buyurtmalar — is_paid=false)
   const [channelsLoading, setChannelsLoading] = useState(false);
   const [channelsData, setChannelsData] = useState<any[]>([]);
 
@@ -45,27 +40,17 @@ export default function DebtsPage() {
   const fetchChannelsDebts = async () => {
     setChannelsLoading(true);
     try {
-      // v_customer_debt_by_channel ishonchsiz chiqdi (naqd to'langan sotuvlarni ham
-      // qarz deb hisoblagan). Shuning uchun faqat haqiqiy nasiya/perechisleniya
-      // kanallarini "qarz" deb hisoblaymiz, qolganini to'liq to'langan deb qabul qilamiz.
+      // Kanal bo'yicha taxmin qilish ISHONCHSIZ chiqdi (masalan Uzum Nasiya/Perechesleniya
+      // ham darhol to'lanishi mumkin ekan — bu tashkilotdan tashkilotga farq qiladi).
+      // Endi qarz FAQAT sales_orders.is_paid=false deb belgilangan aniq buyurtmalar
+      // bo'yicha hisoblanadi (buxgalter tomonidan qo'lda belgilanadi).
       const { data, error } = await supabase
         .from('sales_orders')
-        .select('sales_channel, total_uzs_price, is_shipped');
+        .select('order_code, client_name, client_phone, sales_channel, total_uzs_price, created_at')
+        .eq('is_paid', false)
+        .order('created_at', { ascending: false });
       if (error) throw error;
-
-      const grouped: Record<string, { total_sold: number; debt: number }> = {};
-      (data || []).forEach((o: any) => {
-        const ch = o.sales_channel || 'Noma\'lum';
-        if (!grouped[ch]) grouped[ch] = { total_sold: 0, debt: 0 };
-        grouped[ch].total_sold += Number(o.total_uzs_price) || 0;
-        if (REQUIRES_CONTRACT.includes(ch) && o.is_shipped) {
-          grouped[ch].debt += Number(o.total_uzs_price) || 0;
-        }
-      });
-
-      setChannelsData(Object.entries(grouped).map(([sales_channel, v]) => ({
-        sales_channel, total_sold: v.total_sold, total_paid: v.total_sold - v.debt, debt: v.debt,
-      })));
+      setChannelsData(data || []);
     } catch (error) {
       console.error(error);
       setChannelsData([]);
@@ -142,30 +127,38 @@ export default function DebtsPage() {
 
         {activeTab === 'channels' && (
           <>
-            <h2 style={{ fontSize: '1.2rem', marginBottom: '16px' }}>Debitor Qarzdorlik (Sotuv Kanallari / Mijozlar)</h2>
+            <h2 style={{ fontSize: '1.2rem', marginBottom: '16px' }}>Debitor Qarzdorlik (To'lanmagan buyurtmalar)</h2>
             {channelsLoading ? <p>Yuklanmoqda...</p> : (
               <table className="data-table" style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', backgroundColor: '#f8fafc' }}>
-                    <th style={{ padding: '12px' }}>Sotuv Kanali</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>Jami Sotilgan</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>Jami To'langan (Kassa)</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>Qoldiq Qarz (Debitor)</th>
+                    <th style={{ padding: '12px' }}>Buyurtma</th>
+                    <th style={{ padding: '12px' }}>Mijoz</th>
+                    <th style={{ padding: '12px' }}>Kanal</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>Qarz summasi</th>
                   </tr>
                 </thead>
                 <tbody>
                   {channelsData.length === 0 ? (
-                    <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center' }}>Ma'lumot topilmadi.</td></tr>
-                  ) : channelsData.map(ch => (
-                    <tr key={ch.sales_channel} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '12px', fontWeight: 'bold' }}>{ch.sales_channel}</td>
-                      <td style={{ padding: '12px', textAlign: 'right' }}>{formatUzs(ch.total_sold)}</td>
-                      <td style={{ padding: '12px', textAlign: 'right', color: '#10b981' }}>{formatUzs(ch.total_paid)}</td>
-                      <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: ch.debt > 0 ? '#f59e0b' : 'inherit' }}>
-                        {formatUzs(ch.debt)}
+                    <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center' }}>To'lanmagan buyurtma yo'q — barchasi to'langan.</td></tr>
+                  ) : channelsData.map((o: any) => (
+                    <tr key={o.order_code} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '12px', fontWeight: 'bold' }}>{o.order_code}</td>
+                      <td style={{ padding: '12px' }}>{o.client_name}<div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{o.client_phone}</div></td>
+                      <td style={{ padding: '12px' }}>{o.sales_channel}</td>
+                      <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: '#f59e0b' }}>
+                        {formatUzs(o.total_uzs_price)}
                       </td>
                     </tr>
                   ))}
+                  {channelsData.length > 0 && (
+                    <tr style={{ backgroundColor: '#fffbeb', fontWeight: 'bold' }}>
+                      <td colSpan={3} style={{ padding: '12px' }}>JAMI</td>
+                      <td style={{ padding: '12px', textAlign: 'right', color: '#f59e0b' }}>
+                        {formatUzs(channelsData.reduce((s: number, o: any) => s + Number(o.total_uzs_price), 0))}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             )}

@@ -3,11 +3,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 import { CheckCircle, AlertTriangle } from 'lucide-react';
 
-const REQUIRES_CONTRACT = [
-  'Uzum Nasiya', 'Anor Nasiya', 'Paylater', 'Open Card',
-  'Perechesleniya', 'Yarim nasiya yarim naqt',
-];
-
 export default function BalanceSheetPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({
@@ -42,10 +37,10 @@ export default function BalanceSheetPage() {
       const inventoryUsd = (inv || []).reduce((s, r: any) => s + Number(r.quantity) * Number(r.average_price), 0);
 
       // Mijozlar qarzi (AR) — nasiya/perechisleniya, jo'natilgan
-      const { data: creditOrders } = await supabase
+      const { data: unpaidOrders } = await supabase
         .from('sales_orders').select('total_uzs_price')
-        .in('sales_channel', REQUIRES_CONTRACT).eq('is_shipped', true);
-      const receivable = (creditOrders || []).reduce((s, r: any) => s + (Number(r.total_uzs_price) || 0), 0);
+        .eq('is_paid', false);
+      const receivable = (unpaidOrders || []).reduce((s, r: any) => s + (Number(r.total_uzs_price) || 0), 0);
 
       // Asosiy vositalar (qoldiq qiymat)
       const { data: fa } = await supabase.from('fixed_assets').select('current_book_value, acquisition_cost').eq('status', 'active');
