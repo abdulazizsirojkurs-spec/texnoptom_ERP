@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { CheckCircle, Clock, Package, Edit, Truck, XCircle, RefreshCcw, Search, Calendar, User, Wallet, Bike, X } from 'lucide-react';
+import { CheckCircle, Clock, Package, Edit, Truck, XCircle, RefreshCcw, Search, Calendar, User, Wallet, Bike, X, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 type CashAccount = { id: string; name: string; currency: string };
@@ -29,6 +29,8 @@ export default function SalesOrdersPage() {
   const [modalCashAccountId, setModalCashAccountId] = useState('');
   const [modalExchangeRate, setModalExchangeRate] = useState('');
   const [modalSaving, setModalSaving] = useState(false);
+  const [modalHistory, setModalHistory] = useState<any[]>([]);
+  const [modalHistoryLoading, setModalHistoryLoading] = useState(false);
   const modalAmountRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -138,15 +140,50 @@ export default function SalesOrdersPage() {
     router.push(`/sales?edit=${orderId}`);
   };
 
+  const accountCodeFor = (mode: 'payment' | 'delivery') => (mode === 'payment' ? '90001' : '13014');
+
+  const fetchModalHistory = async (orderId: string, mode: 'payment' | 'delivery') => {
+    setModalHistoryLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('cash_transactions')
+        .select('id, txn_date, income, expense, income_uzs, expense_uzs, cash_accounts(name, currency), created_at')
+        .eq('ref_table', 'sales_orders')
+        .eq('ref_id', orderId)
+        .eq('account_code', accountCodeFor(mode))
+        .order('txn_date', { ascending: false });
+      if (error) throw error;
+      setModalHistory(data || []);
+    } catch (err) {
+      console.error(err);
+      setModalHistory([]);
+    } finally {
+      setModalHistoryLoading(false);
+    }
+  };
+
   const openModal = (order: any, mode: 'payment' | 'delivery') => {
     setModalOrder(order);
     setModalMode(mode);
     setModalAmount('');
     setModalExchangeRate('');
+    fetchModalHistory(order.id, mode);
     setTimeout(() => modalAmountRef.current?.focus(), 50);
   };
 
-  const closeModal = () => setModalOrder(null);
+  const closeModal = () => { setModalOrder(null); setModalHistory([]); };
+
+  const handleDeleteTxn = async (txnId: string) => {
+    if (!confirm("Bu yozuvni o'chirasizmi? Qoldiq summasi qayta hisoblanadi.")) return;
+    try {
+      const { error } = await supabase.from('cash_transactions').delete().eq('id', txnId);
+      if (error) throw error;
+      if (modalOrder) fetchModalHistory(modalOrder.id, modalMode);
+      fetchOrders();
+    } catch (err: any) {
+      alert('Xatolik: ' + err.message);
+    }
+  };
 
   const selectedModalAccount = cashAccounts.find(c => c.id === modalCashAccountId);
   const modalNeedsRate = selectedModalAccount?.currency === 'USD';
@@ -165,7 +202,7 @@ export default function SalesOrdersPage() {
         income: isPayment ? Number(modalAmount) : 0,
         expense: isPayment ? 0 : Number(modalAmount),
         cash_account_id: modalCashAccountId,
-        account_code: isPayment ? '90001' : '13014',
+        account_code: accountCodeFor(modalMode),
         exchange_rate: modalNeedsRate ? Number(modalExchangeRate) : null,
         comment: (isPayment ? "To'lov: " : "Dostavka xarajati: ") + modalOrder.order_code,
         ref_table: 'sales_orders',
@@ -174,8 +211,11 @@ export default function SalesOrdersPage() {
       const { error } = await supabase.from('cash_transactions').insert(payload);
       if (error) throw error;
 
-      closeModal();
+      setModalAmount('');
+      setModalExchangeRate('');
+      fetchModalHistory(modalOrder.id, modalMode);
       fetchOrders();
+      setTimeout(() => modalAmountRef.current?.focus(), 50);
     } catch (err: any) {
       alert('Xatolik: ' + err.message);
     } finally {
@@ -448,7 +488,7 @@ export default function SalesOrdersPage() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9990, padding: 12 }}
           onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
         >
-          <div className="card" style={{ width: '100%', maxWidth: 420, padding: 20 }}>
+          <div className="card" style={{ width: '100%', maxWidth: 440, padding: 20, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0 }}>
                 {modalMode === 'payment' ? "To'lov kiritish" : 'Dostavka xarajati'} — {modalOrder.order_code}
@@ -492,12 +532,48 @@ export default function SalesOrdersPage() {
               )}
 
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
-                <button type="button" onClick={closeModal} className="btn btn-secondary">Bekor qilish</button>
+                <button type="button" onClick={closeModal} className="btn btn-secondary">Yopish</button>
                 <button type="submit" disabled={modalSaving} className="btn btn-primary">
                   {modalSaving ? 'Saqlanmoqda...' : 'Saqlash'}
                 </button>
               </div>
             </form>
+
+            {/* TARIX */}
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                {modalMode === 'payment' ? "To'lovlar tarixi" : 'Dostavka xarajatlari tarixi'}
+              </div>
+              {modalHistoryLoading ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Yuklanmoqda...</div>
+              ) : modalHistory.length === 0 ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Hali yozuv yo'q.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {modalHistory.map((h: any) => {
+                    const amount = modalMode === 'payment' ? h.income : h.expense;
+                    const currency = h.cash_accounts?.currency || 'UZS';
+                    return (
+                      <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#f8fafc', borderRadius: 6, fontSize: '0.85rem' }}>
+                        <div>
+                          <div style={{ fontWeight: 600 }}>{Number(amount).toLocaleString('uz-UZ')} {currency}</div>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                            {new Date(h.txn_date).toLocaleDateString('uz-UZ')} · {h.cash_accounts?.name}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteTxn(h.id)}
+                          title="O'chirish"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
