@@ -342,6 +342,7 @@ export default function SalesOrdersPage() {
               <tr>
                 <th style={{ padding: '16px' }}>Kod / Sotuvchi</th>
                 <th style={{ padding: '16px' }}>Mijoz</th>
+                <th style={{ padding: '16px' }}>Tovarlar</th>
                 <th style={{ padding: '16px' }}>To'lov turi</th>
                 <th style={{ padding: '16px' }}>Summa (so'm)</th>
                 <th style={{ padding: '16px' }}>Tan narx</th>
@@ -355,7 +356,7 @@ export default function SalesOrdersPage() {
             <tbody>
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: '24px', textAlign: 'center' }}>Hozircha buyurtmalar yo'q.</td>
+                  <td colSpan={11} style={{ padding: '24px', textAlign: 'center' }}>Hozircha buyurtmalar yo'q.</td>
                 </tr>
               ) : (
                 orders.map(order => (
@@ -367,6 +368,19 @@ export default function SalesOrdersPage() {
                     <td style={{ padding: '16px' }}>
                       <div style={{ fontWeight: 500 }}>{order.client_name}</div>
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{order.client_phone}</div>
+                    </td>
+                    <td style={{ padding: '16px', minWidth: 220 }}>
+                      {(order.sales_order_items || []).length === 0 ? (
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Tovar yo'q</span>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {(order.sales_order_items || []).map((it: any) => (
+                            <div key={it.id} style={{ fontSize: '0.75rem', color: '#475569', lineHeight: 1.4 }}>
+                              {it.product_name || it.category_name} <span style={{ color: '#94a3b8' }}>× {it.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '16px' }}>
                       <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{order.sales_channel}</span>
