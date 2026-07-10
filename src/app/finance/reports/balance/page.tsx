@@ -36,11 +36,9 @@ export default function BalanceSheetPage() {
       const { data: inv } = await supabase.from('inventory_balances').select('quantity, average_price');
       const inventoryUsd = (inv || []).reduce((s, r: any) => s + Number(r.quantity) * Number(r.average_price), 0);
 
-      // Mijozlar qarzi (AR) — nasiya/perechisleniya, jo'natilgan
-      const { data: unpaidOrders } = await supabase
-        .from('sales_orders').select('total_uzs_price')
-        .eq('is_paid', false);
-      const receivable = (unpaidOrders || []).reduce((s, r: any) => s + (Number(r.total_uzs_price) || 0), 0);
+      // Mijozlar qarzi (AR) — v_order_payment_status'dagi haqiqiy qoldiqlar yig'indisi
+      const { data: paymentRows } = await supabase.from('v_order_payment_status').select('remaining_uzs');
+      const receivable = (paymentRows || []).reduce((s, r: any) => s + (Number(r.remaining_uzs) || 0), 0);
 
       // Asosiy vositalar (qoldiq qiymat)
       const { data: fa } = await supabase.from('fixed_assets').select('current_book_value, acquisition_cost').eq('status', 'active');

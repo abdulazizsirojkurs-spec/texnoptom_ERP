@@ -108,13 +108,10 @@ export default function Home() {
         payable = (sup || []).reduce((s, r: any) => s + Math.max(0, Number(r.balance) || 0), 0);
       }
 
-      // Bizga qarzdorlar (AR) — faqat is_paid=false deb aniq belgilangan buyurtmalar
-      // (kanal bo'yicha taxmin qilish ishonchsiz chiqdi — buxgalter qo'lda belgilaydi)
-      const { data: unpaidOrders } = await supabase
-        .from('sales_orders')
-        .select('total_uzs_price')
-        .eq('is_paid', false);
-      receivable = (unpaidOrders || []).reduce((s, r: any) => s + (Number(r.total_uzs_price) || 0), 0);
+      // Bizga qarzdorlar (AR) — v_order_payment_status'dagi har bir buyurtmaning
+      // haqiqiy qoldig'i (qisman to'lovlarni ham hisobga oladi)
+      const { data: paymentRows } = await supabase.from('v_order_payment_status').select('remaining_uzs');
+      receivable = (paymentRows || []).reduce((s, r: any) => s + (Number(r.remaining_uzs) || 0), 0);
 
       setData({
         todaySales, todayProfit, cashTotal, bankTotalUsd,
@@ -157,7 +154,7 @@ export default function Home() {
 
           <div className="stat-grid" style={{ marginBottom: 'var(--space-6)' }}>
             <StatCard label="Ombor qiymati" value={fmt(data.inventoryValueUzs)} icon={Boxes} tint="icon-tint-blue" sub="Tan narx bo'yicha, taxminiy kursda" />
-            <StatCard label="Bizga qarzdorlar (AR)" value={fmt(data.receivable)} icon={ArrowDownToLine} tint="icon-tint-green" sub="To'lanmagan deb belgilangan buyurtmalar" />
+            <StatCard label="Bizga qarzdorlar (AR)" value={fmt(data.receivable)} icon={ArrowDownToLine} tint="icon-tint-green" sub="Buyurtmalar qoldig'i bo'yicha" />
             {canSeeFinance ? (
               <StatCard label="Biz qarzdormiz (AP)" value={fmt(data.payable)} icon={ArrowUpFromLine} tint="icon-tint-red" />
             ) : (
