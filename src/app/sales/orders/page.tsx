@@ -33,6 +33,14 @@ export default function SalesOrdersPage() {
   const [modalHistoryLoading, setModalHistoryLoading] = useState(false);
   const modalAmountRef = useRef<HTMLInputElement>(null);
 
+  // Tovarlar ro'yxatini tahrirlash oynasi
+  const [itemsOrder, setItemsOrder] = useState<any>(null);
+  const [itemsSaving, setItemsSaving] = useState<string | null>(null); // saqlanayotgan item id (yoki 'new')
+  const [products, setProducts] = useState<any[]>([]);
+  const [newItemCategory, setNewItemCategory] = useState('');
+  const [newItemProductId, setNewItemProductId] = useState('');
+  const [newItemQty, setNewItemQty] = useState('1');
+
   useEffect(() => {
     if (user) {
       fetchOrders();
@@ -42,6 +50,8 @@ export default function SalesOrdersPage() {
   useEffect(() => {
     supabase.from('cash_accounts').select('id, name, currency').eq('is_active', true).eq('is_virtual', false).order('sort_order')
       .then(({ data }) => { if (data) { setCashAccounts(data); setModalCashAccountId(data[0]?.id || ''); } });
+    supabase.from('products').select('*, categories(name)')
+      .then(({ data }) => { if (data) setProducts(data); });
   }, []);
 
   const fetchOrders = async () => {
@@ -182,6 +192,77 @@ export default function SalesOrdersPage() {
       fetchOrders();
     } catch (err: any) {
       alert('Xatolik: ' + err.message);
+    }
+  };
+
+  // ── Tovarlar ro'yxatini tahrirlash (ombor balansiga tegmaydi — faqat yozuvni tuzatadi) ──
+  const openItemsModal = (order: any) => {
+    setItemsOrder(order);
+    setNewItemCategory('');
+    setNewItemProductId('');
+    setNewItemQty('1');
+  };
+  const closeItemsModal = () => setItemsOrder(null);
+
+  const refreshItemsOrder = async (orderId: string) => {
+    const { data } = await supabase.from('sales_orders').select('*, sales_order_items(*)').eq('id', orderId).single();
+    if (data) setItemsOrder(data);
+    fetchOrders();
+  };
+
+  const handleItemQtyChange = async (itemId: string, qty: number) => {
+    if (qty < 1) return;
+    setItemsSaving(itemId);
+    try {
+      const { error } = await supabase.from('sales_order_items').update({ quantity: qty }).eq('id', itemId);
+      if (error) throw error;
+      if (itemsOrder) await refreshItemsOrder(itemsOrder.id);
+    } catch (err: any) {
+      alert('Xatolik: ' + err.message);
+    } finally {
+      setItemsSaving(null);
+    }
+  };
+
+  const handleItemDelete = async (itemId: string) => {
+    if (!confirm("Bu tovarni buyurtmadan o'chirasizmi?")) return;
+    setItemsSaving(itemId);
+    try {
+      const { error } = await supabase.from('sales_order_items').delete().eq('id', itemId);
+      if (error) throw error;
+      if (itemsOrder) await refreshItemsOrder(itemsOrder.id);
+    } catch (err: any) {
+      alert('Xatolik: ' + err.message);
+    } finally {
+      setItemsSaving(null);
+    }
+  };
+
+  const itemCategories = Array.from(new Set(products.map((p: any) => p.categories?.name).filter(Boolean)));
+  const filteredNewItemProducts = products.filter((p: any) => p.categories?.name === newItemCategory);
+
+  const handleAddItem = async () => {
+    if (!itemsOrder || !newItemProductId || Number(newItemQty) < 1) return;
+    const product = products.find((p: any) => p.id === newItemProductId);
+    if (!product) return;
+    setItemsSaving('new');
+    try {
+      const { error } = await supabase.from('sales_order_items').insert({
+        order_id: itemsOrder.id,
+        category_name: newItemCategory,
+        product_id: product.id,
+        product_name: product.name,
+        quantity: Number(newItemQty),
+      });
+      if (error) throw error;
+      setNewItemCategory('');
+      setNewItemProductId('');
+      setNewItemQty('1');
+      await refreshItemsOrder(itemsOrder.id);
+    } catch (err: any) {
+      alert('Xatolik: ' + err.message);
+    } finally {
+      setItemsSaving(null);
     }
   };
 
@@ -393,6 +474,14 @@ export default function SalesOrdersPage() {
                           })}
                         </div>
                       )}
+                      {role === 'admin' && (
+                        <button
+                          onClick={() => openItemsModal(order)}
+                          style={{ marginTop: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}
+                        >
+                          <Edit size={12} /> Tahrirlash
+                        </button>
+                      )}
                     </td>
                     <td style={{ padding: '16px' }}>
                       <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{order.sales_channel}</span>
@@ -599,6 +688,92 @@ export default function SalesOrdersPage() {
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOVARLAR RO'YXATINI TAHRIRLASH OYNASI */}
+      {itemsOrder && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9990, padding: 12 }}
+          onClick={(e) => { if (e.target === e.currentTarget) closeItemsModal(); }}
+        >
+          <div className="card" style={{ width: '100%', maxWidth: 480, padding: 20, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <h3 style={{ margin: 0 }}>Tovarlar — {itemsOrder.order_code}</h3>
+              <button onClick={closeItemsModal} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: 16 }}>
+              Diqqat: bu yerdagi o'zgartirish ombor qoldig'iga avtomatik ta'sir qilmaydi — faqat buyurtma yozuvini tuzatadi.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+              {(itemsOrder.sales_order_items || []).length === 0 ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Tovar yo'q.</div>
+              ) : (itemsOrder.sales_order_items || []).map((it: any) => (
+                <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#f8fafc', borderRadius: 6 }}>
+                  <div style={{ flex: 1, fontSize: '0.85rem' }}>
+                    <div style={{ fontWeight: 600 }}>{it.product_name}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{it.category_name}</div>
+                  </div>
+                  <input
+                    type="number"
+                    defaultValue={it.quantity}
+                    disabled={itemsSaving === it.id}
+                    onBlur={(e) => {
+                      const q = Number(e.target.value);
+                      if (q > 0 && q !== it.quantity) handleItemQtyChange(it.id, q);
+                    }}
+                    style={{ width: 56, padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', textAlign: 'center', fontSize: '0.85rem' }}
+                  />
+                  <button
+                    onClick={() => handleItemDelete(it.id)}
+                    disabled={itemsSaving === it.id}
+                    title="O'chirish"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8 }}>Yangi tovar qo'shish</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginBottom: 8 }}>
+                <select
+                  className="input-field"
+                  value={newItemCategory}
+                  onChange={e => { setNewItemCategory(e.target.value); setNewItemProductId(''); }}
+                >
+                  <option value="">Kategoriya tanlang...</option>
+                  {itemCategories.map((c: any) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {newItemCategory && (
+                  <select className="input-field" value={newItemProductId} onChange={e => setNewItemProductId(e.target.value)}>
+                    <option value="">Tovar tanlang...</option>
+                    {filteredNewItemProducts.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="number"
+                  value={newItemQty}
+                  onChange={e => setNewItemQty(e.target.value)}
+                  min={1}
+                  style={{ width: 70, padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', textAlign: 'center' }}
+                />
+                <button
+                  onClick={handleAddItem}
+                  disabled={!newItemProductId || itemsSaving === 'new'}
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                >
+                  {itemsSaving === 'new' ? 'Qo\'shilmoqda...' : "Qo'shish"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
