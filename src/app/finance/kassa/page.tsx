@@ -318,7 +318,7 @@ export default function KassaPage() {
             </button>
             <button
               type="button"
-              onClick={() => { setDirection('exchange'); resetForm(false); }}
+              onClick={() => { resetForm(false); setDirection('exchange'); }}
               style={{
                 display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 20px', borderRadius: '8px',
                 border: direction === 'exchange' ? '2px solid #d97706' : '1px solid var(--border)',
