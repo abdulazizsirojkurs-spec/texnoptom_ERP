@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { ArrowDownCircle, ArrowUpCircle, Download, Edit, Trash2, X, Check } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, Download, Edit, Trash2, X, Check, ArrowLeftRight } from 'lucide-react';
 
 type CashAccount = { id: string; name: string; currency: string };
 type ChartAccount = { id: string; code: string; name: string; flow_sign: '+' | '-'; group_name: string };
@@ -43,6 +43,15 @@ export default function KassaPage() {
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState('');
   const amountRef = useRef<HTMLInputElement>(null);
+
+  // Hisob/valyuta almashish (masalan: naqd so'mga dollar sotib olish)
+  const [exchFromAccount, setExchFromAccount] = useState('');
+  const [exchToAccount, setExchToAccount] = useState('');
+  const [exchFromAmount, setExchFromAmount] = useState('');
+  const [exchToAmount, setExchToAmount] = useState('');
+  const [exchNote, setExchNote] = useState('');
+  const [exchSaving, setExchSaving] = useState(false);
+  const [exchFlash, setExchFlash] = useState('');
 
   useEffect(() => {
     fetchRefData();
@@ -212,6 +221,55 @@ export default function KassaPage() {
     }
   };
 
+  const handleExchange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!exchFromAccount || !exchToAccount) {
+      alert("Ikkala hisobni ham tanlang!");
+      return;
+    }
+    if (exchFromAccount === exchToAccount) {
+      alert("Bir xil hisobga almashtirib bo'lmaydi!");
+      return;
+    }
+    if (!exchFromAmount || Number(exchFromAmount) <= 0 || !exchToAmount || Number(exchToAmount) <= 0) {
+      alert("Ikkala summani ham kiriting!");
+      return;
+    }
+
+    setExchSaving(true);
+    try {
+      const { error } = await supabase.rpc('exchange_currency', {
+        p_txn_date: txnDate,
+        p_from_account: exchFromAccount,
+        p_to_account: exchToAccount,
+        p_from_amount: Number(exchFromAmount),
+        p_to_amount: Number(exchToAmount),
+        p_comment: exchNote || null,
+        p_created_by: user?.id || null,
+      });
+      if (error) throw error;
+
+      setExchFlash("Almashtirildi ✓");
+      setExchFromAccount(''); setExchToAccount(''); setExchFromAmount(''); setExchToAmount(''); setExchNote('');
+      fetchTransactions();
+      setTimeout(() => setExchFlash(''), 2000);
+    } catch (err: any) {
+      alert('Xatolik: ' + err.message);
+    } finally {
+      setExchSaving(false);
+    }
+  };
+
+  const impliedRate = exchFromAmount && exchToAmount ? (() => {
+    const fromAcc = cashAccounts.find(a => a.id === exchFromAccount);
+    const toAcc = cashAccounts.find(a => a.id === exchToAccount);
+    if (!fromAcc || !toAcc || fromAcc.currency === toAcc.currency) return null;
+    const usdAmount = fromAcc.currency === 'USD' ? Number(exchFromAmount) : Number(exchToAmount);
+    const uzsAmount = fromAcc.currency === 'USD' ? Number(exchToAmount) : Number(exchFromAmount);
+    if (!usdAmount) return null;
+    return uzsAmount / usdAmount;
+  })() : null;
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -363,6 +421,60 @@ export default function KassaPage() {
             )}
           </div>
         )}
+      </form>
+
+      {/* HISOB / VALYUTA ALMASHISH */}
+      <form onSubmit={handleExchange} className="card" style={{ padding: '20px', marginBottom: '20px', border: '2px solid #e0e7ff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '16px' }}>
+          <ArrowLeftRight size={20} color="#4338ca" />
+          <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#4338ca' }}>Hisob / valyuta almashish</h3>
+          {exchFlash && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#15803d', fontWeight: 600, fontSize: '0.9rem', marginLeft: 'auto' }}>
+              <Check size={16} /> {exchFlash}
+            </span>
+          )}
+        </div>
+        <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '-8px', marginBottom: '16px' }}>
+          Masalan: naqd so'mga dollar sotib olish, yoki kartadagi pulni naqdga/dollarga o'tkazish. P&L (foyda-zarar)ga ta'sir qilmaydi — bu shunchaki pulning shaklini/joyini o'zgartiradi.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 1fr 140px', gap: '12px', alignItems: 'end' }}>
+          <div>
+            <label className="field-label">Qaysi hisobdan</label>
+            <select className="input-field" value={exchFromAccount} onChange={e => setExchFromAccount(e.target.value)}>
+              <option value="">Tanlang...</option>
+              {cashAccounts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="field-label">Berilgan summa</label>
+            <input type="number" className="input-field" placeholder="0" value={exchFromAmount} onChange={e => setExchFromAmount(e.target.value)} style={{ fontWeight: 700 }} />
+          </div>
+          <div>
+            <label className="field-label">Qaysi hisobga</label>
+            <select className="input-field" value={exchToAccount} onChange={e => setExchToAccount(e.target.value)}>
+              <option value="">Tanlang...</option>
+              {cashAccounts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="field-label">Olingan summa</label>
+            <input type="number" className="input-field" placeholder="0" value={exchToAmount} onChange={e => setExchToAmount(e.target.value)} style={{ fontWeight: 700 }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', marginTop: '12px', alignItems: 'end' }}>
+          <div style={{ flex: 1 }}>
+            <label className="field-label">Izoh (ixtiyoriy)</label>
+            <input type="text" className="input-field" placeholder="Masalan: Dollar sotib olindi" value={exchNote} onChange={e => setExchNote(e.target.value)} />
+          </div>
+          {impliedRate && (
+            <div style={{ fontSize: '0.85rem', color: '#4338ca', whiteSpace: 'nowrap', paddingBottom: '10px' }}>
+              Kurs: 1$ = {Math.round(impliedRate).toLocaleString('uz-UZ')} so'm
+            </div>
+          )}
+          <button type="submit" disabled={exchSaving} className="btn btn-primary" style={{ padding: '10px 28px', fontWeight: 700, whiteSpace: 'nowrap', background: '#4338ca' }}>
+            {exchSaving ? 'Saqlanmoqda...' : 'Almashtirish'}
+          </button>
+        </div>
       </form>
 
       {/* Filters */}
