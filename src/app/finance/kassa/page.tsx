@@ -177,7 +177,6 @@ export default function KassaPage() {
         exchange_rate: needsExchangeRate ? Number(exchangeRate) : null,
         comment: salaryNote || null,
         supplier_id: supplierId || null,
-        employee_id: isSalaryPayment ? salaryEmployeeId : null,
         created_by: user?.id || null,
       };
 
