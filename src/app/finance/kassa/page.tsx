@@ -7,6 +7,11 @@ import { ArrowDownCircle, ArrowUpCircle, Download, Edit, Trash2, X, Check } from
 type CashAccount = { id: string; name: string; currency: string };
 type ChartAccount = { id: string; code: string; name: string; flow_sign: '+' | '-'; group_name: string };
 type Supplier = { id: string; name: string; balance: number };
+type Employee = { id: string; full_name: string; department: string };
+
+const SALARY_ACCOUNT_CODES = ['13001', '14003', '15007']; // Nakladnoy/Adminstrativ/Tijoriy ish haqi
+
+const MONTH_NAMES = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
 
 export default function KassaPage() {
   const { user } = useAuth();
@@ -15,6 +20,7 @@ export default function KassaPage() {
   const [cashAccounts, setCashAccounts] = useState<CashAccount[]>([]);
   const [chartAccounts, setChartAccounts] = useState<ChartAccount[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   // Filters
   const [startDate, setStartDate] = useState('');
@@ -32,6 +38,8 @@ export default function KassaPage() {
   const [note, setNote] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [supplierUsdAmount, setSupplierUsdAmount] = useState('');
+  const [salaryEmployeeId, setSalaryEmployeeId] = useState('');
+  const [salaryMonth, setSalaryMonth] = useState(() => new Date().getMonth());
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState('');
   const amountRef = useRef<HTMLInputElement>(null);
@@ -48,6 +56,8 @@ export default function KassaPage() {
     const { data: ca } = await supabase.from('cash_accounts').select('id, name, currency').eq('is_active', true).eq('is_virtual', false).order('sort_order');
     const { data: coa } = await supabase.from('chart_of_accounts').select('id, code, name, flow_sign, group_name').eq('is_active', true).order('sort_order');
     const { data: sup } = await supabase.from('suppliers').select('id, name, balance').order('name');
+    const { data: emp } = await supabase.from('employees').select('id, full_name, department').eq('is_active', true).order('full_name');
+    if (emp) setEmployees(emp);
     if (ca) {
       setCashAccounts(ca);
       const savedCash = localStorage.getItem('kassa_last_account');
@@ -87,6 +97,7 @@ export default function KassaPage() {
   const selectedCashAccount = cashAccounts.find(c => c.id === cashAccountId);
   const needsExchangeRate = selectedCashAccount?.currency === 'USD';
   const filteredChartAccounts = chartAccounts.filter(c => c.flow_sign === (direction === 'income' ? '+' : '-'));
+  const isSalaryPayment = direction === 'expense' && SALARY_ACCOUNT_CODES.includes(accountCode);
 
   const resetForm = (keepContext: boolean) => {
     setEditingId(null);
@@ -94,6 +105,8 @@ export default function KassaPage() {
     setNote('');
     setSupplierId('');
     setSupplierUsdAmount('');
+    setSalaryEmployeeId('');
+    setSalaryMonth(new Date().getMonth());
     if (!keepContext) {
       setDirection('expense');
       setAccountCode('');
@@ -143,9 +156,18 @@ export default function KassaPage() {
       alert("Postavshik balansidan yechiladigan summani ($) kiriting!");
       return;
     }
+    if (isSalaryPayment && !salaryEmployeeId) {
+      alert("Ish haqi to'lovi uchun xodimni tanlang!");
+      return;
+    }
 
     setSaving(true);
     try {
+      const salaryEmployee = employees.find(e => e.id === salaryEmployeeId);
+      const salaryNote = isSalaryPayment && salaryEmployee
+        ? `${salaryEmployee.full_name} — ${MONTH_NAMES[salaryMonth]} oyi uchun${note ? ' — ' + note : ''}`
+        : note;
+
       const payload: any = {
         txn_date: txnDate,
         income: direction === 'income' ? Number(amount) : 0,
@@ -153,8 +175,9 @@ export default function KassaPage() {
         cash_account_id: cashAccountId,
         account_code: accountCode,
         exchange_rate: needsExchangeRate ? Number(exchangeRate) : null,
-        comment: note || null,
+        comment: salaryNote || null,
         supplier_id: supplierId || null,
+        employee_id: isSalaryPayment ? salaryEmployeeId : null,
         created_by: user?.id || null,
       };
 
@@ -296,6 +319,24 @@ export default function KassaPage() {
             {saving ? 'Saqlanmoqda...' : editingId ? 'Yangilash' : 'Saqlash'}
           </button>
         </div>
+
+        {isSalaryPayment && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: '12px', marginTop: '12px' }}>
+            <div>
+              <label className="field-label">Xodim</label>
+              <select className="input-field" value={salaryEmployeeId} onChange={e => setSalaryEmployeeId(e.target.value)} style={{ borderColor: '#f59e0b', background: '#fffbeb' }}>
+                <option value="">Tanlang...</option>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.full_name} ({e.department})</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="field-label">Qaysi oy uchun</label>
+              <select className="input-field" value={salaryMonth} onChange={e => setSalaryMonth(Number(e.target.value))} style={{ borderColor: '#f59e0b', background: '#fffbeb' }}>
+                {MONTH_NAMES.map((m, i) => <option key={m} value={i}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
 
         {direction === 'expense' && (
           <div style={{ display: 'grid', gridTemplateColumns: supplierId ? '1fr 220px' : '1fr', gap: '12px', marginTop: '12px' }}>
