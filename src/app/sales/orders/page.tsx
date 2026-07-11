@@ -450,32 +450,36 @@ export default function SalesOrdersPage() {
                       <div style={{ fontWeight: 500 }}>{order.client_name}</div>
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{order.client_phone}</div>
                     </td>
-                    <td style={{ padding: '16px', minWidth: 240, maxWidth: 280 }}>
+                    <td style={{ padding: '16px', minWidth: 320, maxWidth: 380 }}>
                       {(order.sales_order_items || []).length === 0 ? (
                         <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Tovar yo'q</span>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 34px 60px', gap: 8, padding: '0 8px 3px', fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                            <span>Tovar</span>
+                            <span style={{ textAlign: 'center' }}>Soni</span>
+                            <span style={{ textAlign: 'right' }}>Tan narx</span>
+                          </div>
                           {(order.sales_order_items || []).map((it: any) => {
                             const name = it.product_name || it.category_name;
                             const hasCost = it.unit_cost_usd !== null && it.unit_cost_usd !== undefined;
-                            const lineCost = hasCost ? Number(it.unit_cost_usd) * Number(it.quantity) : null;
+                            const costNum = hasCost ? Number(it.unit_cost_usd) : null;
+                            const isSuspicious = hasCost && costNum === 0;
                             return (
                               <div
                                 key={it.id}
-                                title={`${name} × ${it.quantity}`}
+                                title={name}
                                 style={{
-                                  display: 'flex', flexDirection: 'column', gap: 1,
-                                  background: '#f1f5f9', borderRadius: 6, padding: '3px 8px',
-                                  fontSize: '0.72rem', color: '#475569', lineHeight: 1.5,
+                                  display: 'grid', gridTemplateColumns: '1fr 34px 60px', gap: 8, alignItems: 'center',
+                                  background: isSuspicious ? '#fef2f2' : '#f8fafc', borderRadius: 6, padding: '5px 8px',
+                                  fontSize: '0.75rem', color: '#334155',
                                 }}
                               >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                                  <span style={{ flexShrink: 0, fontWeight: 700, color: '#64748b' }}>×{it.quantity}</span>
-                                </div>
-                                <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
-                                  {hasCost ? `Tan narx: $${Number(it.unit_cost_usd).toLocaleString('uz-UZ')} × ${it.quantity} = $${lineCost!.toLocaleString('uz-UZ')}` : "Tan narx: noma'lum"}
-                                </div>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                                <span style={{ textAlign: 'center', fontWeight: 700, color: '#64748b' }}>×{it.quantity}</span>
+                                <span style={{ textAlign: 'right', fontWeight: 700, color: !hasCost ? '#94a3b8' : isSuspicious ? '#dc2626' : '#15803d' }}>
+                                  {hasCost ? `$${costNum}` : '?'}
+                                </span>
                               </div>
                             );
                           })}
