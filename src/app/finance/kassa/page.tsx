@@ -28,7 +28,7 @@ export default function KassaPage() {
   const [typeFilter, setTypeFilter] = useState('');
 
   // Tezkor kiritish formasi
-  const [direction, setDirection] = useState<'income' | 'expense'>('expense');
+  const [direction, setDirection] = useState<'income' | 'expense' | 'exchange'>('expense');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [txnDate, setTxnDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState('');
@@ -280,7 +280,13 @@ export default function KassaPage() {
       </div>
 
       {/* TEZKOR KIRITISH PANELI */}
-      <form onSubmit={handleSubmit} className="card" style={{ padding: '20px', marginBottom: '20px', border: `2px solid ${direction === 'income' ? 'var(--success-200, #bbf7d0)' : 'var(--danger-200, #fecaca)'}` }}>
+      <div
+        className="card"
+        style={{
+          padding: '20px', marginBottom: '20px',
+          border: `2px solid ${direction === 'income' ? 'var(--success-200, #bbf7d0)' : direction === 'expense' ? 'var(--danger-200, #fecaca)' : '#fde68a'}`,
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
@@ -309,21 +315,85 @@ export default function KassaPage() {
             >
               <ArrowUpCircle size={20} /> Chiqim
             </button>
+            <button
+              type="button"
+              onClick={() => { setDirection('exchange'); resetForm(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 20px', borderRadius: '8px',
+                border: direction === 'exchange' ? '2px solid #d97706' : '1px solid var(--border)',
+                background: direction === 'exchange' ? '#fef3c7' : 'transparent',
+                color: direction === 'exchange' ? '#92400e' : 'var(--text-secondary)',
+                fontWeight: 700, cursor: 'pointer', fontSize: '0.95rem',
+              }}
+            >
+              <ArrowLeftRight size={20} /> Hisob Almashuv
+            </button>
           </div>
 
-          {flash && (
+          {(flash || exchFlash) && (
             <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#15803d', fontWeight: 600, fontSize: '0.9rem' }}>
-              <Check size={16} /> {flash}
+              <Check size={16} /> {flash || exchFlash}
             </span>
           )}
 
-          {editingId && (
+          {editingId && direction !== 'exchange' && (
             <button type="button" onClick={() => resetForm(true)} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
               <X size={14} style={{ marginRight: '4px' }} /> Tahrirlashni bekor qilish
             </button>
           )}
         </div>
 
+        {direction === 'exchange' ? (
+          <form onSubmit={handleExchange}>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '16px' }}>
+              Masalan: naqd so'mga dollar sotib olish, yoki kartadagi pulni naqdga/dollarga o'tkazish. P&L (foyda-zarar)ga ta'sir qilmaydi — bu shunchaki pulning shaklini/joyini o'zgartiradi.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 1fr 1fr', gap: '12px', alignItems: 'end' }}>
+              <div>
+                <label className="field-label">Sana</label>
+                <input type="date" className="input-field" value={txnDate} onChange={e => setTxnDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="field-label">Qaysi hisobdan</label>
+                <select className="input-field" value={exchFromAccount} onChange={e => setExchFromAccount(e.target.value)} style={{ borderColor: '#f59e0b' }}>
+                  <option value="">Tanlang...</option>
+                  {cashAccounts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="field-label">Berilgan summa</label>
+                <input type="number" className="input-field" placeholder="0" value={exchFromAmount} onChange={e => setExchFromAmount(e.target.value)} style={{ fontSize: '1.1rem', fontWeight: 700 }} autoFocus />
+              </div>
+              <div>
+                <label className="field-label">Qaysi hisobga</label>
+                <select className="input-field" value={exchToAccount} onChange={e => setExchToAccount(e.target.value)} style={{ borderColor: '#f59e0b' }}>
+                  <option value="">Tanlang...</option>
+                  {cashAccounts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="field-label">Olingan summa</label>
+                <input type="number" className="input-field" placeholder="0" value={exchToAmount} onChange={e => setExchToAmount(e.target.value)} style={{ fontSize: '1.1rem', fontWeight: 700 }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '12px', alignItems: 'end' }}>
+              <div style={{ flex: 1 }}>
+                <label className="field-label">Izoh (ixtiyoriy)</label>
+                <input type="text" className="input-field" placeholder="Masalan: Dollar sotib olindi" value={exchNote} onChange={e => setExchNote(e.target.value)} />
+              </div>
+              {impliedRate && (
+                <div style={{ fontSize: '0.85rem', color: '#92400e', whiteSpace: 'nowrap', paddingBottom: '10px', fontWeight: 600 }}>
+                  Kurs: 1$ = {Math.round(impliedRate).toLocaleString('uz-UZ')} so'm
+                </div>
+              )}
+              <button type="submit" disabled={exchSaving} className="btn btn-primary" style={{ padding: '10px 28px', fontWeight: 700, whiteSpace: 'nowrap', background: '#d97706' }}>
+                {exchSaving ? 'Saqlanmoqda...' : 'Almashtirish'}
+              </button>
+            </div>
+          </form>
+        ) : (
+        <form onSubmit={handleSubmit}>
         <div style={{ display: 'grid', gridTemplateColumns: needsExchangeRate ? '140px 1fr 1fr 1fr 120px' : '140px 1fr 1fr 1fr', gap: '12px', alignItems: 'end' }}>
           <div>
             <label className="field-label">Sana</label>
@@ -421,61 +491,9 @@ export default function KassaPage() {
             )}
           </div>
         )}
-      </form>
-
-      {/* HISOB / VALYUTA ALMASHISH */}
-      <form onSubmit={handleExchange} className="card" style={{ padding: '20px', marginBottom: '20px', border: '2px solid #e0e7ff' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '16px' }}>
-          <ArrowLeftRight size={20} color="#4338ca" />
-          <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#4338ca' }}>Hisob / valyuta almashish</h3>
-          {exchFlash && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#15803d', fontWeight: 600, fontSize: '0.9rem', marginLeft: 'auto' }}>
-              <Check size={16} /> {exchFlash}
-            </span>
-          )}
-        </div>
-        <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '-8px', marginBottom: '16px' }}>
-          Masalan: naqd so'mga dollar sotib olish, yoki kartadagi pulni naqdga/dollarga o'tkazish. P&L (foyda-zarar)ga ta'sir qilmaydi — bu shunchaki pulning shaklini/joyini o'zgartiradi.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 1fr 140px', gap: '12px', alignItems: 'end' }}>
-          <div>
-            <label className="field-label">Qaysi hisobdan</label>
-            <select className="input-field" value={exchFromAccount} onChange={e => setExchFromAccount(e.target.value)}>
-              <option value="">Tanlang...</option>
-              {cashAccounts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="field-label">Berilgan summa</label>
-            <input type="number" className="input-field" placeholder="0" value={exchFromAmount} onChange={e => setExchFromAmount(e.target.value)} style={{ fontWeight: 700 }} />
-          </div>
-          <div>
-            <label className="field-label">Qaysi hisobga</label>
-            <select className="input-field" value={exchToAccount} onChange={e => setExchToAccount(e.target.value)}>
-              <option value="">Tanlang...</option>
-              {cashAccounts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="field-label">Olingan summa</label>
-            <input type="number" className="input-field" placeholder="0" value={exchToAmount} onChange={e => setExchToAmount(e.target.value)} style={{ fontWeight: 700 }} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '12px', marginTop: '12px', alignItems: 'end' }}>
-          <div style={{ flex: 1 }}>
-            <label className="field-label">Izoh (ixtiyoriy)</label>
-            <input type="text" className="input-field" placeholder="Masalan: Dollar sotib olindi" value={exchNote} onChange={e => setExchNote(e.target.value)} />
-          </div>
-          {impliedRate && (
-            <div style={{ fontSize: '0.85rem', color: '#4338ca', whiteSpace: 'nowrap', paddingBottom: '10px' }}>
-              Kurs: 1$ = {Math.round(impliedRate).toLocaleString('uz-UZ')} so'm
-            </div>
-          )}
-          <button type="submit" disabled={exchSaving} className="btn btn-primary" style={{ padding: '10px 28px', fontWeight: 700, whiteSpace: 'nowrap', background: '#4338ca' }}>
-            {exchSaving ? 'Saqlanmoqda...' : 'Almashtirish'}
-          </button>
-        </div>
-      </form>
+        </form>
+        )}
+      </div>
 
       {/* Filters */}
       <div className="card flex-mobile-col" style={{ padding: '16px', marginBottom: '20px', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
