@@ -457,18 +457,25 @@ export default function SalesOrdersPage() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           {(order.sales_order_items || []).map((it: any) => {
                             const name = it.product_name || it.category_name;
+                            const hasCost = it.unit_cost_usd !== null && it.unit_cost_usd !== undefined;
+                            const lineCost = hasCost ? Number(it.unit_cost_usd) * Number(it.quantity) : null;
                             return (
                               <div
                                 key={it.id}
                                 title={`${name} × ${it.quantity}`}
                                 style={{
-                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+                                  display: 'flex', flexDirection: 'column', gap: 1,
                                   background: '#f1f5f9', borderRadius: 6, padding: '3px 8px',
                                   fontSize: '0.72rem', color: '#475569', lineHeight: 1.5,
                                 }}
                               >
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                                <span style={{ flexShrink: 0, fontWeight: 700, color: '#64748b' }}>×{it.quantity}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                                  <span style={{ flexShrink: 0, fontWeight: 700, color: '#64748b' }}>×{it.quantity}</span>
+                                </div>
+                                <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                                  {hasCost ? `Tan narx: $${Number(it.unit_cost_usd).toLocaleString('uz-UZ')} × ${it.quantity} = $${lineCost!.toLocaleString('uz-UZ')}` : "Tan narx: noma'lum"}
+                                </div>
                               </div>
                             );
                           })}
