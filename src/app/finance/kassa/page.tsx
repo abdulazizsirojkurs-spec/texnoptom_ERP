@@ -88,8 +88,9 @@ export default function KassaPage() {
 
       if (startDate) query = query.gte('txn_date', startDate);
       if (endDate) query = query.lte('txn_date', endDate);
-      if (typeFilter === 'income') query = query.gt('income', 0);
-      else if (typeFilter === 'expense') query = query.gt('expense', 0);
+      if (typeFilter === 'income') query = query.gt('income', 0).neq('account_code', '99999');
+      else if (typeFilter === 'expense') query = query.gt('expense', 0).neq('account_code', '99999');
+      else if (typeFilter === 'exchange') query = query.eq('account_code', '99999');
 
       const { data, error } = await query;
       if (error) throw error;
@@ -511,6 +512,7 @@ export default function KassaPage() {
             <option value="">Barchasi</option>
             <option value="income">Kirim</option>
             <option value="expense">Chiqim</option>
+            <option value="exchange">Almashuv</option>
           </select>
         </div>
         <div>
