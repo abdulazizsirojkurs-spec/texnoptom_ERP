@@ -575,6 +575,12 @@ export default function WarehousePage() {
                ))}
              </tbody>
            </table>
+           {receiptItems.length > 0 && (
+             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px', fontSize: '1.05rem' }}>
+               <span style={{ color: '#64748b', marginRight: '8px' }}>Nakladnoy bo'yicha jami:</span>
+               <strong>${receiptItems.reduce((sum, it) => sum + it.total, 0).toLocaleString()}</strong>
+             </div>
+           )}
            <button className="btn btn-primary" onClick={handleSubmitReceipt} disabled={kirimLoading || receiptItems.length === 0}>{kirimLoading ? "Saqlanmoqda..." : "Tasdiqlash"}</button>
          </div>
       )}
