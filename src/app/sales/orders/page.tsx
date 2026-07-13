@@ -423,6 +423,7 @@ export default function SalesOrdersPage() {
               <tr>
                 <th style={{ padding: '16px' }}>Kod / Sotuvchi</th>
                 <th style={{ padding: '16px' }}>Mijoz</th>
+                <th style={{ padding: '16px' }}>Manzil</th>
                 <th style={{ padding: '16px' }}>Tovarlar</th>
                 <th style={{ padding: '16px' }}>To'lov turi</th>
                 <th style={{ padding: '16px' }}>Summa (so'm)</th>
@@ -437,7 +438,7 @@ export default function SalesOrdersPage() {
             <tbody>
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ padding: '24px', textAlign: 'center' }}>Hozircha buyurtmalar yo'q.</td>
+                  <td colSpan={12} style={{ padding: '24px', textAlign: 'center' }}>Hozircha buyurtmalar yo'q.</td>
                 </tr>
               ) : (
                 orders.map(order => (
@@ -449,6 +450,13 @@ export default function SalesOrdersPage() {
                     <td style={{ padding: '16px' }}>
                       <div style={{ fontWeight: 500 }}>{order.client_name}</div>
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{order.client_phone}</div>
+                    </td>
+                    <td style={{ padding: '16px', minWidth: 160, maxWidth: 200 }}>
+                      {order.client_address ? (
+                        <span style={{ fontSize: '0.85rem', color: '#334155' }}>{order.client_address}</span>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>—</span>
+                      )}
                     </td>
                     <td style={{ padding: '16px', minWidth: 320, maxWidth: 380 }}>
                       {(order.sales_order_items || []).length === 0 ? (
