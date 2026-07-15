@@ -79,9 +79,14 @@ export default function KassaPage() {
   const fetchTransactions = async () => {
     setLoading(true);
     try {
+      // cash_accounts!inner + is_virtual=false — faqat HAQIQIY pul harakatlari (Naqd/Karta/USD va h.k.).
+      // Otgruzka'da avtomatik yaraladigan "Buxgalteriya (P&L, naqd emas)" virtual hisobidagi
+      // yozuvlar (sotuv daromadi / tan narx COGS) bu yerda ko'rsatilmaydi — ular P&L hisobotida
+      // (Moliya -> P&L) ko'rinadi, chunki ular real pul harakati emas.
       let query = supabase
         .from('cash_transactions')
-        .select(`*, cash_accounts(name, currency), chart_of_accounts(name), suppliers(name)`)
+        .select(`*, cash_accounts!inner(name, currency, is_virtual), chart_of_accounts(name), suppliers(name)`)
+        .eq('cash_accounts.is_virtual', false)
         .order('txn_date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(50);
