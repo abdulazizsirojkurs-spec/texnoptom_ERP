@@ -117,6 +117,80 @@ export default function WarehousePage() {
     } catch(err: any) { alert("Xatolik: " + err.message); }
   };
 
+  // ── Nakladnoy bo'yicha to'lov (Kassa'dan chiqim, hamkor balansini kamaytiradi) ──
+  const fetchPayHistory = async (receiptId: string) => {
+    setPayHistoryLoading(true);
+    try {
+      const { data } = await supabase
+        .from('cash_transactions')
+        .select('id, txn_date, expense, cash_accounts(name, currency)')
+        .eq('ref_table', 'receipt_docs')
+        .eq('ref_id', receiptId)
+        .eq('account_code', '12001')
+        .order('txn_date', { ascending: false });
+      setPayHistory(data || []);
+    } catch (err) {
+      console.error(err);
+      setPayHistory([]);
+    } finally {
+      setPayHistoryLoading(false);
+    }
+  };
+
+  const openPayModal = (doc: any) => {
+    setPayDoc(doc);
+    setPayUsdAmount('');
+    fetchPayHistory(doc.id);
+  };
+  const closePayModal = () => { setPayDoc(null); setPayHistory([]); };
+
+  const selectedPayAccount = cashAccounts.find(c => c.id === payAccountId);
+
+  const handlePaySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payDoc || !payUsdAmount || Number(payUsdAmount) <= 0) return;
+    if (!payAccountId) { alert("Hisobni tanlang!"); return; }
+
+    setPaySaving(true);
+    try {
+      const usdAmount = Number(payUsdAmount);
+      const isUsdAccount = selectedPayAccount?.currency === 'USD';
+      const payload = {
+        txn_date: new Date().toISOString().slice(0, 10),
+        income: 0,
+        expense: isUsdAccount ? usdAmount : usdAmount * exchangeRate,
+        cash_account_id: payAccountId,
+        account_code: '12001',
+        exchange_rate: isUsdAccount ? exchangeRate : null,
+        comment: `To'lov: Nakladnoy № ${payDoc.id.split('-')[0].toUpperCase()} (${payDoc.suppliers?.name || ''})`,
+        supplier_id: payDoc.supplier_id,
+        ref_table: 'receipt_docs',
+        ref_id: payDoc.id,
+      };
+      const { error } = await supabase.from('cash_transactions').insert(payload);
+      if (error) throw error;
+
+      const { data: sup } = await supabase.from('suppliers').select('balance').eq('id', payDoc.supplier_id).single();
+      if (sup) {
+        await supabase.from('suppliers').update({ balance: Number(sup.balance) - usdAmount }).eq('id', payDoc.supplier_id);
+      }
+
+      setPayUsdAmount('');
+      fetchPayHistory(payDoc.id);
+    } catch (err: any) {
+      alert('Xatolik: ' + err.message);
+    } finally {
+      setPaySaving(false);
+    }
+  };
+
+  const handleDeletePayTxn = async (txnId: string) => {
+    if (!confirm("Bu to'lov yozuvini o'chirasizmi? (Hamkor balansi avtomatik tiklanmaydi, kerak bo'lsa qo'lda tuzating)")) return;
+    const { error } = await supabase.from('cash_transactions').delete().eq('id', txnId);
+    if (error) { alert('Xatolik: ' + error.message); return; }
+    if (payDoc) fetchPayHistory(payDoc.id);
+  };
+
   // --- Spisaniya Logic ---states
   const [spisProduct, setSpisProduct] = useState('');
   const [spisQty, setSpisQty] = useState('');
@@ -128,6 +202,15 @@ export default function WarehousePage() {
 
   // Tarix (History) states
   const [historyDocs, setHistoryDocs] = useState<any[]>([]);
+
+  // Nakladnoy bo'yicha to'lov (Kassa'dan chiqim) states
+  const [cashAccounts, setCashAccounts] = useState<any[]>([]);
+  const [payDoc, setPayDoc] = useState<any>(null);
+  const [payUsdAmount, setPayUsdAmount] = useState('');
+  const [payAccountId, setPayAccountId] = useState('');
+  const [paySaving, setPaySaving] = useState(false);
+  const [payHistory, setPayHistory] = useState<any[]>([]);
+  const [payHistoryLoading, setPayHistoryLoading] = useState(false);
 
   // Qoldiq (Balances) states
   const [balances, setBalances] = useState<any[]>([]);
@@ -153,6 +236,9 @@ export default function WarehousePage() {
       }
 
       if (activeTab === 'tarix') {
+        const { data: caData } = await supabase.from('cash_accounts').select('id, name, currency').eq('is_active', true).eq('is_virtual', false).order('sort_order');
+        if (caData) { setCashAccounts(caData); if (!payAccountId && caData[0]) setPayAccountId(caData[0].id); }
+
         const { data } = await supabase
           .from('receipt_docs')
           .select('*, suppliers(name), receipt_items(*, products(name))')
@@ -776,6 +862,9 @@ export default function WarehousePage() {
                       </div>
                       {userRole === 'admin' && (
                         <div style={{ display: 'flex', gap: '8px', borderLeft: '1px solid #cbd5e1', paddingLeft: '20px' }}>
+                          <button onClick={() => openPayModal(doc)} className="btn" style={{ padding: '8px 14px', backgroundColor: '#eef2ff', border: '1px solid #c7d2fe', color: '#4338ca', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem' }} title="Shu nakladnoy bo'yicha to'lov qilish">
+                            <DollarSign size={16} style={{ marginRight: 4, verticalAlign: 'middle' }} /> To'lov
+                          </button>
                           <button onClick={() => handleEditReceipt(doc)} className="btn" style={{ padding: '8px', backgroundColor: 'white', border: '1px solid #cbd5e1', color: '#3b82f6', borderRadius: '8px' }} title="Tahrirlash (O'zgartirish)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                           </button>
@@ -875,6 +964,85 @@ export default function WarehousePage() {
                ))}
              </tbody>
            </table>
+        </div>
+      )}
+
+      {/* NAKLADNOY BO'YICHA TO'LOV OYNASI */}
+      {payDoc && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9990, padding: 12 }}
+          onClick={(e) => { if (e.target === e.currentTarget) closePayModal(); }}
+        >
+          <div className="card" style={{ width: '100%', maxWidth: 440, padding: 20, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <h3 style={{ margin: 0 }}>To'lov — Nakladnoy № {payDoc.id.split('-')[0].toUpperCase()}</h3>
+              <button onClick={closePayModal} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 0 }}>
+              {payDoc.suppliers?.name} &nbsp;·&nbsp; Nakladnoy summasi: <b>${payDoc.total_amount?.toLocaleString()}</b>
+            </p>
+
+            <form onSubmit={handlePaySubmit}>
+              <div style={{ marginBottom: 12 }}>
+                <label className="field-label">To'lanadigan summa ($)</label>
+                <input
+                  type="number"
+                  className="input-field"
+                  placeholder="0"
+                  value={payUsdAmount}
+                  onChange={e => setPayUsdAmount(e.target.value)}
+                  style={{ fontSize: '1.1rem', fontWeight: 700 }}
+                  autoFocus
+                />
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label className="field-label">Qaysi hisobdan</label>
+                <select className="input-field" value={payAccountId} onChange={e => setPayAccountId(e.target.value)}>
+                  {cashAccounts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
+                </select>
+                {selectedPayAccount?.currency === 'UZS' && payUsdAmount && (
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 6 }}>
+                    ≈ {(Number(payUsdAmount) * exchangeRate).toLocaleString('uz-UZ')} so'm (kurs {exchangeRate.toLocaleString('uz-UZ')})
+                  </p>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+                <button type="button" onClick={closePayModal} className="btn btn-secondary">Yopish</button>
+                <button type="submit" disabled={paySaving} className="btn btn-primary">
+                  {paySaving ? 'Saqlanmoqda...' : "To'lash"}
+                </button>
+              </div>
+            </form>
+
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                Shu nakladnoy bo'yicha to'lovlar tarixi
+              </div>
+              {payHistoryLoading ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Yuklanmoqda...</div>
+              ) : payHistory.length === 0 ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Hali to'lov qilinmagan.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {payHistory.map((h: any) => (
+                    <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#f8fafc', borderRadius: 6, fontSize: '0.85rem' }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{Number(h.expense).toLocaleString('uz-UZ')} {h.cash_accounts?.currency}</div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                          {new Date(h.txn_date).toLocaleDateString('uz-UZ')} · {h.cash_accounts?.name}
+                        </div>
+                      </div>
+                      <button onClick={() => handleDeletePayTxn(h.id)} title="O'chirish" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
