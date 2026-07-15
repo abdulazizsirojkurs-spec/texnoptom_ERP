@@ -486,7 +486,7 @@ export default function SalesOrdersPage() {
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
                                 <span style={{ textAlign: 'center', fontWeight: 700, color: '#64748b' }}>×{it.quantity}</span>
                                 <span style={{ textAlign: 'right', fontWeight: 700, color: !hasCost ? '#94a3b8' : isSuspicious ? '#dc2626' : '#15803d' }}>
-                                  {hasCost ? `$${costNum}` : '?'}
+                                  {hasCost ? `$${Number(costNum!.toFixed(2))}` : '?'}
                                 </span>
                               </div>
                             );

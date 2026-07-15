@@ -70,7 +70,7 @@ function sendTelegram(text) {
     }
 
     const ids = ps.map(p => p.order_id);
-    const orders = await supabaseGet('/rest/v1/sales_orders?select=id,order_code,client_name,client_phone&id=in.(' + ids.join(',') + ')');
+    const orders = await supabaseGet('/rest/v1/sales_orders?select=id,order_code,client_name,client_phone,client_address&id=in.(' + ids.join(',') + ')');
 
     const remainingById = {};
     ps.forEach(p => { remainingById[p.order_id] = Number(p.remaining_uzs); });
@@ -88,6 +88,7 @@ function sendTelegram(text) {
     lines.push('');
     rows.forEach(r => {
       lines.push(`• <b>${r.order_code}</b> — ${r.client_name} (${r.client_phone}) — ${fmt(r.remaining)} so'm`);
+      if (r.client_address) lines.push(`  📍 ${r.client_address}`);
     });
 
     await sendTelegram(lines.join('\n'));
