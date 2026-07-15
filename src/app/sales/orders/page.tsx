@@ -247,12 +247,20 @@ export default function SalesOrdersPage() {
     if (!product) return;
     setItemsSaving('new');
     try {
+      const { data: bal } = await supabase
+        .from('inventory_balances')
+        .select('average_price')
+        .eq('product_id', product.id)
+        .maybeSingle();
+      const unitCostUsd = bal?.average_price && Number(bal.average_price) > 0 ? Number(bal.average_price) : null;
+
       const { error } = await supabase.from('sales_order_items').insert({
         order_id: itemsOrder.id,
         category_name: newItemCategory,
         product_id: product.id,
         product_name: product.name,
         quantity: Number(newItemQty),
+        unit_cost_usd: unitCostUsd,
       });
       if (error) throw error;
       setNewItemCategory('');
