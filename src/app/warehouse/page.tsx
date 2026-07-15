@@ -151,12 +151,16 @@ export default function WarehousePage() {
 
     setPaySaving(true);
     try {
-      const usdAmount = Number(payUsdAmount);
+      // Kiritilgan summa TANLANGAN HISOBNING o'z valyutasida (so'm yoki $) — boshqa
+      // hisob-kitob formalari bilan bir xil qoida. Hamkor balansi (har doim $) uchun
+      // esa kerak bo'lsa joriy kurs orqali $ ga aylantiriladi.
+      const nativeAmount = Number(payUsdAmount);
       const isUsdAccount = cashAccounts.find(c => c.id === payAccountId)?.currency === 'USD';
+      const usdAmount = isUsdAccount ? nativeAmount : nativeAmount / exchangeRate;
       const payload = {
         txn_date: new Date().toISOString().slice(0, 10),
         income: 0,
-        expense: isUsdAccount ? usdAmount : usdAmount * exchangeRate,
+        expense: nativeAmount,
         cash_account_id: payAccountId,
         account_code: '12001',
         exchange_rate: isUsdAccount ? exchangeRate : null,
@@ -983,7 +987,14 @@ export default function WarehousePage() {
 
             <form onSubmit={handlePaySubmit}>
               <div style={{ marginBottom: 12 }}>
-                <label className="field-label">To'lanadigan summa ($)</label>
+                <label className="field-label">Qaysi hisobdan</label>
+                <select className="input-field" value={payAccountId} onChange={e => setPayAccountId(e.target.value)}>
+                  {cashAccounts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label className="field-label">To'lanadigan summa {selectedPayAccount ? `(${selectedPayAccount.currency})` : ''}</label>
                 <input
                   type="number"
                   className="input-field"
@@ -993,16 +1004,9 @@ export default function WarehousePage() {
                   style={{ fontSize: '1.1rem', fontWeight: 700 }}
                   autoFocus
                 />
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <label className="field-label">Qaysi hisobdan</label>
-                <select className="input-field" value={payAccountId} onChange={e => setPayAccountId(e.target.value)}>
-                  {cashAccounts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
-                </select>
                 {selectedPayAccount?.currency === 'UZS' && payUsdAmount && (
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 6 }}>
-                    ≈ {(Number(payUsdAmount) * exchangeRate).toLocaleString('uz-UZ')} so'm (kurs {exchangeRate.toLocaleString('uz-UZ')})
+                    ≈ ${(Number(payUsdAmount) / exchangeRate).toFixed(2)} (kurs {exchangeRate.toLocaleString('uz-UZ')})
                   </p>
                 )}
               </div>
