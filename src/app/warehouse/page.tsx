@@ -144,8 +144,6 @@ export default function WarehousePage() {
   };
   const closePayModal = () => { setPayDoc(null); setPayHistory([]); };
 
-  const selectedPayAccount = cashAccounts.find(c => c.id === payAccountId);
-
   const handlePaySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payDoc || !payUsdAmount || Number(payUsdAmount) <= 0) return;
@@ -154,7 +152,7 @@ export default function WarehousePage() {
     setPaySaving(true);
     try {
       const usdAmount = Number(payUsdAmount);
-      const isUsdAccount = selectedPayAccount?.currency === 'USD';
+      const isUsdAccount = cashAccounts.find(c => c.id === payAccountId)?.currency === 'USD';
       const payload = {
         txn_date: new Date().toISOString().slice(0, 10),
         income: 0,
@@ -211,6 +209,7 @@ export default function WarehousePage() {
   const [paySaving, setPaySaving] = useState(false);
   const [payHistory, setPayHistory] = useState<any[]>([]);
   const [payHistoryLoading, setPayHistoryLoading] = useState(false);
+  const selectedPayAccount = cashAccounts.find(c => c.id === payAccountId);
 
   // Qoldiq (Balances) states
   const [balances, setBalances] = useState<any[]>([]);
