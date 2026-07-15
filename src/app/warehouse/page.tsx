@@ -140,6 +140,7 @@ export default function WarehousePage() {
   const openPayModal = (doc: any) => {
     setPayDoc(doc);
     setPayUsdAmount('');
+    setPayRate(String(exchangeRate));
     fetchPayHistory(doc.id);
   };
   const closePayModal = () => { setPayDoc(null); setPayHistory([]); };
@@ -148,22 +149,25 @@ export default function WarehousePage() {
     e.preventDefault();
     if (!payDoc || !payUsdAmount || Number(payUsdAmount) <= 0) return;
     if (!payAccountId) { alert("Hisobni tanlang!"); return; }
+    const isUsdAccount = cashAccounts.find(c => c.id === payAccountId)?.currency === 'USD';
+    if (!isUsdAccount && (!payRate || Number(payRate) <= 0)) { alert("Kursni kiriting!"); return; }
 
     setPaySaving(true);
     try {
       // Kiritilgan summa TANLANGAN HISOBNING o'z valyutasida (so'm yoki $) — boshqa
       // hisob-kitob formalari bilan bir xil qoida. Hamkor balansi (har doim $) uchun
-      // esa kerak bo'lsa joriy kurs orqali $ ga aylantiriladi.
+      // esa shu nakladnoy uchun qo'lda kiritilgan kurs orqali $ ga aylantiriladi
+      // (chunki har bir hamkorda/kunda kurs boshqacha bo'lishi mumkin).
       const nativeAmount = Number(payUsdAmount);
-      const isUsdAccount = cashAccounts.find(c => c.id === payAccountId)?.currency === 'USD';
-      const usdAmount = isUsdAccount ? nativeAmount : nativeAmount / exchangeRate;
+      const usedRate = Number(payRate) || exchangeRate;
+      const usdAmount = isUsdAccount ? nativeAmount : nativeAmount / usedRate;
       const payload = {
         txn_date: new Date().toISOString().slice(0, 10),
         income: 0,
         expense: nativeAmount,
         cash_account_id: payAccountId,
         account_code: '12001',
-        exchange_rate: isUsdAccount ? exchangeRate : null,
+        exchange_rate: isUsdAccount ? usedRate : null,
         comment: `To'lov: Nakladnoy № ${payDoc.id.split('-')[0].toUpperCase()} (${payDoc.suppliers?.name || ''})`,
         supplier_id: payDoc.supplier_id,
         ref_table: 'receipt_docs',
@@ -209,6 +213,7 @@ export default function WarehousePage() {
   const [cashAccounts, setCashAccounts] = useState<any[]>([]);
   const [payDoc, setPayDoc] = useState<any>(null);
   const [payUsdAmount, setPayUsdAmount] = useState('');
+  const [payRate, setPayRate] = useState('');
   const [payAccountId, setPayAccountId] = useState('');
   const [paySaving, setPaySaving] = useState(false);
   const [payHistory, setPayHistory] = useState<any[]>([]);
@@ -993,23 +998,37 @@ export default function WarehousePage() {
                 </select>
               </div>
 
-              <div style={{ marginBottom: 12 }}>
-                <label className="field-label">To'lanadigan summa {selectedPayAccount ? `(${selectedPayAccount.currency})` : ''}</label>
-                <input
-                  type="number"
-                  className="input-field"
-                  placeholder="0"
-                  value={payUsdAmount}
-                  onChange={e => setPayUsdAmount(e.target.value)}
-                  style={{ fontSize: '1.1rem', fontWeight: 700 }}
-                  autoFocus
-                />
-                {selectedPayAccount?.currency === 'UZS' && payUsdAmount && (
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 6 }}>
-                    ≈ ${(Number(payUsdAmount) / exchangeRate).toFixed(2)} (kurs {exchangeRate.toLocaleString('uz-UZ')})
-                  </p>
+              <div style={{ display: 'grid', gridTemplateColumns: selectedPayAccount?.currency === 'UZS' ? '1fr 120px' : '1fr', gap: 12, marginBottom: 12 }}>
+                <div>
+                  <label className="field-label">To'lanadigan summa {selectedPayAccount ? `(${selectedPayAccount.currency})` : ''}</label>
+                  <input
+                    type="number"
+                    className="input-field"
+                    placeholder="0"
+                    value={payUsdAmount}
+                    onChange={e => setPayUsdAmount(e.target.value)}
+                    style={{ fontSize: '1.1rem', fontWeight: 700 }}
+                    autoFocus
+                  />
+                </div>
+                {selectedPayAccount?.currency === 'UZS' && (
+                  <div>
+                    <label className="field-label">Kurs</label>
+                    <input
+                      type="number"
+                      className="input-field"
+                      placeholder="12050"
+                      value={payRate}
+                      onChange={e => setPayRate(e.target.value)}
+                    />
+                  </div>
                 )}
               </div>
+              {selectedPayAccount?.currency === 'UZS' && payUsdAmount && payRate && Number(payRate) > 0 && (
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: -6, marginBottom: 12 }}>
+                  ≈ ${(Number(payUsdAmount) / Number(payRate)).toFixed(2)} hamkor balansidan yechiladi
+                </p>
+              )}
 
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
                 <button type="button" onClick={closePayModal} className="btn btn-secondary">Yopish</button>
