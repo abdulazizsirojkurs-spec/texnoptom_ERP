@@ -126,7 +126,7 @@ export default function WarehousePage() {
         .select('id, txn_date, expense, cash_accounts(name, currency)')
         .eq('ref_table', 'receipt_docs')
         .eq('ref_id', receiptId)
-        .eq('account_code', '12001')
+        .eq('account_code', '12002')
         .order('txn_date', { ascending: false });
       setPayHistory(data || []);
     } catch (err) {
@@ -166,7 +166,7 @@ export default function WarehousePage() {
         income: 0,
         expense: nativeAmount,
         cash_account_id: payAccountId,
-        account_code: '12001',
+        account_code: '12002',
         exchange_rate: isUsdAccount ? usedRate : null,
         comment: `To'lov: Nakladnoy № ${payDoc.id.split('-')[0].toUpperCase()} (${payDoc.suppliers?.name || ''})`,
         supplier_id: payDoc.supplier_id,

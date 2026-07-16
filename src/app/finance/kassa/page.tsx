@@ -475,7 +475,17 @@ export default function KassaPage() {
           <div style={{ display: 'grid', gridTemplateColumns: supplierId ? '1fr 220px' : '1fr', gap: '12px', marginTop: '12px' }}>
             <div>
               <label className="field-label">Postavshikka to'lovmi? (ixtiyoriy)</label>
-              <select className="input-field" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+              <select
+                className="input-field"
+                value={supplierId}
+                onChange={e => {
+                  setSupplierId(e.target.value);
+                  // Postavshik tanlanganda toifa avtomatik "Postavshikka to'lov (qarz yopish)"ga
+                  // o'rnatiladi — bu P&L'da tan narx (COGS) bilan aralashib ketmasligi uchun muhim
+                  // (COGS allaqachon otgruzka paytida avtomatik hisoblanadi, real to'lov qayta hisoblanmasligi kerak).
+                  if (e.target.value) setAccountCode('12002');
+                }}
+              >
                 <option value="">Yo'q — oddiy xarajat</option>
                 {suppliers.map(s => (
                   <option key={s.id} value={s.id}>{s.name} (joriy qarz: ${Number(s.balance).toLocaleString('uz-UZ')})</option>
