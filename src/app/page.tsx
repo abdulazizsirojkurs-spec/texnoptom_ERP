@@ -51,24 +51,25 @@ export default function Home() {
   const fetchDashboard = async () => {
     setLoading(true);
     try {
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
+      const todayStr = new Date().toISOString().slice(0, 10);
 
-      // Bugungi sotuv va foyda (marja)
-      const { data: todayOrders } = await supabase
-        .from('sales_orders')
-        .select('total_uzs_price, exchange_rate, sales_order_items(unit_cost_usd, quantity)')
-        .gte('created_at', todayStart.toISOString());
+      // Bugungi sotuv va foyda — RASMIY P&L bilan bir xil manbadan (cash_transactions,
+      // otgruzka paytida yaratiladigan hisobiy yozuvlar) olinadi. Avval bu yerda buyurtma
+      // YARATILGAN kunga qarab hisoblanardi (hali otgruzka/to'lov bo'lmasa ham) — bu P&L
+      // sahifasidagi rasmiy raqamlardan farq qilib, chalkashlik keltirib chiqarardi.
+      const { data: todayLedger } = await supabase
+        .from('cash_transactions')
+        .select('income_uzs, expense_uzs, account_code, cash_accounts!inner(is_virtual)')
+        .eq('cash_accounts.is_virtual', true)
+        .eq('txn_date', todayStr);
 
       let todaySales = 0;
-      let todayProfit = 0;
-      (todayOrders || []).forEach((o: any) => {
-        todaySales += Number(o.total_uzs_price) || 0;
-        const costUsd = (o.sales_order_items || []).reduce(
-          (s: number, it: any) => s + (Number(it.unit_cost_usd) || 0) * (Number(it.quantity) || 0), 0
-        );
-        todayProfit += (Number(o.total_uzs_price) || 0) - costUsd * (Number(o.exchange_rate) || 0);
+      let todayCogs = 0;
+      (todayLedger || []).forEach((t: any) => {
+        if (['11001', '11002', '11003'].includes(t.account_code)) todaySales += Number(t.income_uzs) || 0;
+        else if (t.account_code === '12001') todayCogs += Number(t.expense_uzs) || 0;
       });
+      const todayProfit = todaySales - todayCogs;
 
       // Kutilayotgan buyurtmalar (hali jo'natilmagan, yopilmagan/rad etilmagan/vozvrat qilinmagan)
       const { count: pendingOrders } = await supabase
@@ -103,9 +104,12 @@ export default function Home() {
           }
         });
 
-        // Biz qarzdormiz (AP) — ta'minotchilarga musbat balans
+        // Biz qarzdormiz (AP) — ta'minotchilarga musbat balans (suppliers.balance HAR DOIM $ da
+        // saqlanadi; "Bizga qarzdorlar (AR)" so'mda ko'rsatilgani uchun ikkalasi solishtirilishi
+        // uchun bu ham so'mga o'giriladi — avval $ summasi "so'm" deb noto'g'ri yorliqlanardi)
         const { data: sup } = await supabase.from('suppliers').select('balance');
-        payable = (sup || []).reduce((s, r: any) => s + Math.max(0, Number(r.balance) || 0), 0);
+        const payableUsd = (sup || []).reduce((s, r: any) => s + Math.max(0, Number(r.balance) || 0), 0);
+        payable = payableUsd * rate;
       }
 
       // Bizga qarzdorlar (AR) — v_order_payment_status'dagi har bir buyurtmaning
@@ -156,7 +160,7 @@ export default function Home() {
             <StatCard label="Ombor qiymati" value={fmt(data.inventoryValueUzs)} icon={Boxes} tint="icon-tint-blue" sub="Tan narx bo'yicha, taxminiy kursda" />
             <StatCard label="Bizga qarzdorlar (AR)" value={fmt(data.receivable)} icon={ArrowDownToLine} tint="icon-tint-green" sub="Buyurtmalar qoldig'i bo'yicha" />
             {canSeeFinance ? (
-              <StatCard label="Biz qarzdormiz (AP)" value={fmt(data.payable)} icon={ArrowUpFromLine} tint="icon-tint-red" />
+              <StatCard label="Biz qarzdormiz (AP)" value={fmt(data.payable)} icon={ArrowUpFromLine} tint="icon-tint-red" sub="Postavshiklar, taxminiy kursda" />
             ) : (
               <StatCard label="Biz qarzdormiz (AP)" value="—" icon={ArrowUpFromLine} tint="icon-tint-red" sub="Faqat moliya xodimlariga" />
             )}
