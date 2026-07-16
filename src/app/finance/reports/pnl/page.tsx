@@ -4,30 +4,55 @@ import { supabase } from '@/utils/supabase';
 
 const MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
 
+// Hisobot boshlanish sanasi: shu sanadan oldingi buyurtmalarda tan narx va batafsil
+// kirim-chiqim ma'lumotlari kiritilmagan (tizimni yuritish shu sanadan boshlangan).
+// Shu sababli marja/foyda hisob-kitobi faqat shu sanadan boshlab olinadi — aks holda
+// tan narxi noma'lum katta hajmdagi tarixiy sotuvlar marjani soxta yuqori ko'rsatib yuboradi.
+const DEFAULT_CUTOFF = '2026-07-10';
+
 export default function PnLPage() {
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  
+  const [cutoffDate, setCutoffDate] = useState(DEFAULT_CUTOFF);
+  const [legacyRevenue, setLegacyRevenue] = useState<{ count: number; total: number } | null>(null);
+
   // Data structure: section -> account_code -> monthIndex -> amount
   const [pnlData, setPnlData] = useState<any>({});
-  
+
   useEffect(() => {
     fetchPnlData();
-  }, [selectedYear]);
+    fetchLegacySummary();
+  }, [selectedYear, cutoffDate]);
+
+  const fetchLegacySummary = async () => {
+    // Kesim sanasidan oldingi buyurtmalar — faqat ma'lumot uchun, marja hisobiga kirmaydi.
+    const { data, error } = await supabase
+      .from('sales_orders')
+      .select('total_uzs_price')
+      .lt('created_at', cutoffDate);
+    if (error) { setLegacyRevenue(null); return; }
+    setLegacyRevenue({
+      count: data?.length || 0,
+      total: (data || []).reduce((s, r: any) => s + (Number(r.total_uzs_price) || 0), 0),
+    });
+  };
 
   const fetchPnlData = async () => {
     setLoading(true);
     try {
-      // v_pnl_monthly dan yil bo'yicha ma'lumotlarni olamiz
       const startOfYear = `${selectedYear}-01-01`;
       const endOfYear = `${selectedYear}-12-31`;
+      const effectiveStart = cutoffDate > startOfYear ? cutoffDate : startOfYear;
 
+      // v_pnl_monthly emas, cash_transactions'dan to'g'ridan-to'g'ri — kesim sanasi bo'yicha
+      // kunlik filtr qo'yish uchun (oylik view buni qo'llab-quvvatlamaydi).
       const { data, error } = await supabase
-        .from('v_pnl_monthly')
-        .select('*')
-        .gte('month', startOfYear)
-        .lte('month', endOfYear);
-      
+        .from('cash_transactions')
+        .select('txn_date, income_uzs, expense_uzs, account_code, chart_of_accounts(pnl_section, name)')
+        .gte('txn_date', effectiveStart)
+        .lte('txn_date', endOfYear)
+        .limit(5000);
+
       if (error) throw error;
 
       // Ma'lumotlarni guruhlash
@@ -37,15 +62,17 @@ export default function PnLPage() {
 
       if (data) {
         data.forEach((row: any) => {
-          const m = new Date(row.month).getMonth(); // 0-11
-          const section = row.pnl_section;
+          const coa = row.chart_of_accounts;
+          if (!coa) return;
+          const m = new Date(row.txn_date).getMonth(); // 0-11
+          const section = coa.pnl_section;
           if (grouped[section]) {
-            if (!grouped[section][row.account_name]) {
-              grouped[section][row.account_name] = Array(12).fill(0);
+            if (!grouped[section][coa.name]) {
+              grouped[section][coa.name] = Array(12).fill(0);
             }
-            // daromad uchun net_uzs musbat, xarajat uchun net_uzs manfiy yoki faqat expense_uzs ishlatiladi
-            const val = section === 'revenue' || section === 'other_income' ? row.net_uzs : row.expense_uzs;
-            grouped[section][row.account_name][m] = val;
+            const net = (Number(row.income_uzs) || 0) - (Number(row.expense_uzs) || 0);
+            const val = section === 'revenue' || section === 'other_income' ? net : (Number(row.expense_uzs) || 0);
+            grouped[section][coa.name][m] += val;
           }
         });
       }
@@ -119,12 +146,16 @@ export default function PnLPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: 12 }}>
         <h1 className="page-title" style={{ margin: 0 }}>Profit & Loss (P&L)</h1>
-        <div>
-          <select 
-            className="input-field" 
-            value={selectedYear} 
+        <div style={{ display: 'flex', gap: 12, alignItems: 'end' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Hisoblash boshlanish sanasi</label>
+            <input type="date" className="input-field" value={cutoffDate} onChange={(e) => setCutoffDate(e.target.value)} />
+          </div>
+          <select
+            className="input-field"
+            value={selectedYear}
             onChange={(e) => setSelectedYear(Number(e.target.value))}
           >
             <option value={2026}>2026</option>
@@ -133,6 +164,19 @@ export default function PnLPage() {
           </select>
         </div>
       </div>
+
+      {legacyRevenue && legacyRevenue.count > 0 && (
+        <div style={{
+          background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10,
+          padding: '14px 18px', marginBottom: 20, fontSize: '0.88rem', color: '#92400e',
+        }}>
+          <b>Diqqat:</b> {cutoffDate} sanasidan oldin <b>{legacyRevenue.count} ta buyurtma</b> bo'lgan
+          (jami <b>{Math.round(legacyRevenue.total).toLocaleString('uz-UZ')} so'm</b> aylanma), lekin ularda
+          tan narx va batafsil kirim-chiqim ma'lumotlari kiritilmagan (tizimni yuritish shu sanadan boshlangan).
+          Shu sabab bu buyurtmalar <b>quyidagi hisob-kitobga kiritilmagan</b> — aks holda marja/foyda
+          foizi noto'g'ri (soxta yuqori) chiqib qolar edi. Sanani yuqoridagi maydondan o'zgartirishingiz mumkin.
+        </div>
+      )}
 
       <div className="card" style={{ overflowX: 'auto' }}>
         <table className="data-table" style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse' }}>
