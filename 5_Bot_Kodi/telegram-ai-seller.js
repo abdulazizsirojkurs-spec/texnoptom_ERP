@@ -102,7 +102,9 @@ async function callClaude(history, docsDir) {
     }
     const resp = await anthropic.messages.create({
       model: 'claude-sonnet-5',
-      max_tokens: 2000,
+      max_tokens: 8000,
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'low' },
       system: systemPrompt,
       tools: allowTools ? [HISOBLA_TOOL, NASIYA_TOOL] : undefined,
       messages: msgs,
