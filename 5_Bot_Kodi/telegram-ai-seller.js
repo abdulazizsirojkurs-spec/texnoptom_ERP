@@ -83,10 +83,25 @@ async function callClaude(history, docsDir) {
   const { prices, margin } = parsePrices(pricesText);
   const systemPrompt = buildSystemPrompt(docsDir);
 
-  const msgs = history.map((m) => ({
-    role: m.direction === 'in' ? 'user' : 'assistant',
-    content: m.text,
-  }));
+  // Anthropic API qat'iy user/assistant almashinuvini talab qiladi va oxirgi
+  // xabar assistant bo'lsa xato beradi — ketma-ket bir xil rolni birlashtiramiz
+  // va oxiri "assistant" bo'lib qolsa uni tashlab yuboramiz.
+  const msgs = [];
+  for (const m of history) {
+    const role = m.direction === 'in' ? 'user' : 'assistant';
+    const last = msgs[msgs.length - 1];
+    if (last && last.role === role) {
+      last.content += '\n' + m.text;
+    } else {
+      msgs.push({ role, content: m.text });
+    }
+  }
+  while (msgs.length && msgs[msgs.length - 1].role === 'assistant') {
+    msgs.pop();
+  }
+  if (!msgs.length) {
+    return "Kechirasiz, hozir javob bera olmadim, operatorimiz tez orada yozadi.";
+  }
 
   const MAX_TOOL_ROUNDS = 3;
   let answer = '';
