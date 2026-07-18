@@ -226,6 +226,101 @@ async function escalateToOperator(client, conversation, reason, lastCustomerText
   await client.sendMessage(OPERATOR_GROUP_ID, { message });
 }
 
+// Mijozdan kelgan bitta xabarni to'liq qayta ishlaydi: xotira, guardrail,
+// Claude, javob yuborish. Ham jonli event handler, ham catch-up mexanizmi
+// (pastda) shu bir funksiyani chaqiradi — ikkalasida ham bir xil mantiq.
+async function processCustomerMessage(client, sender, text) {
+  await markReadNaturally(client, sender.id);
+
+  const { conversation, isNew } = await getOrCreateConversation(sender.id.toString(), sender.username, sender.firstName);
+  if (conversation.ai_muted) return; // odam ushlagan — AI jim (07_GUARDRAILS #4)
+
+  await logMessage(conversation.id, 'in', text);
+  await updateConversation(conversation.id, { last_customer_message_at: new Date().toISOString(), followup_stage: 0 });
+
+  if (isNew) {
+    const { ok } = await checkDailyLimit(DAILY_LIMIT);
+    if (!ok) {
+      await escalateToOperator(client, conversation, 'kunlik_limit', text);
+      await client.sendMessage(sender.id, { message: 'Assalomu alaykum! Menejerimiz tez orada siz bilan bog\'lanadi 👍' });
+      return;
+    }
+    await incrementDailyUsage('new_conversations');
+  }
+
+  const phone = extractPhone(text);
+  if (phone && !conversation.phone) {
+    await updateConversation(conversation.id, { phone });
+    const leadId = await upsertLead({ name: sender.firstName, phone, note: 'Telegram AI Sotuvchi orqali', stage: 'telefon oldi' }).catch(() => null);
+    if (leadId) await updateConversation(conversation.id, { krayin_lead_id: leadId });
+  }
+
+  const history = await sb(
+    `telegram_messages?conversation_id=eq.${conversation.id}&select=direction,text&order=sent_at.asc&limit=30`
+  );
+  const rawAnswer = await callClaude(history || [], DOCS_DIR);
+  const { text: draftText, escalate: aiEscalate } = extractAiEscalationMarker(rawAnswer);
+  const hardReason = checkHardEscalation(text);
+  const escalate = aiEscalate || !!hardReason;
+  const escalateReason = hardReason || (aiEscalate ? 'ai_marker' : null);
+
+  if (TRIAL_MODE) {
+    const who = sender.username ? '@' + sender.username : sender.firstName;
+    const sentDraft = await client.sendMessage(OPERATOR_GROUP_ID, {
+      message:
+        `🆕 Mijoz: ${who} (ID: ${sender.id})${escalate ? '  ⚠️ ESKALATSIYA' : ''}\n\n` +
+        `Mijoz yozdi: "${text}"\n\nAI javobi:\n${draftText}\n\n` +
+        `✅ deb javob bering — shu matn ketadi. Boshqa matn yozsangiz — o'sha matn ketadi.`,
+    });
+    pendingDrafts.set(sentDraft.id, {
+      conversationId: conversation.id,
+      telegramUserId: sender.id,
+      draftText,
+      escalate,
+      escalateReason,
+      conversation,
+      lastCustomerText: text,
+    });
+    await logMessage(conversation.id, 'out', draftText, true);
+  } else {
+    await sendHuman(client, sender.id, draftText);
+    await logMessage(conversation.id, 'out', draftText);
+    await updateConversation(conversation.id, { last_ai_message_at: new Date().toISOString() });
+    if (escalate) await escalateToOperator(client, conversation, escalateReason, text);
+  }
+}
+
+// MTProto ba'zan uzoq ulanishda live update yubormay qo'yishi mumkin (avval
+// ham shu loyihada uchragan, hujjatlashtirilgan xato). Shuning uchun davriy
+// "qayta tekshiruv": har bir faol suhbat uchun Telegram'dan so'nggi xabarlarni
+// so'raymiz va DB'da yo'q (ya'ni hali javob berilmagan) kiruvchi xabarlarni
+// topib, xuddi jonli kelgandek qayta ishlaymiz.
+async function catchUpMissedMessages(client) {
+  const conversations = await sb('telegram_conversations?status=eq.active&ai_muted=eq.false&select=*');
+  for (const conv of conversations || []) {
+    try {
+      const peer = await client.getInputEntity(BigInt(conv.telegram_user_id));
+      const recent = await client.getMessages(peer, { limit: 10 });
+      const incoming = recent.filter((m) => m && !m.out && (m.text || '').trim()).sort((a, b) => a.id - b.id);
+      if (!incoming.length) continue;
+
+      const lastKnownId = conv.last_telegram_msg_id || 0;
+      const missed = incoming.filter((m) => m.id > lastKnownId);
+      if (!missed.length) continue;
+
+      log('Catch-up: yo\'qolgan xabar(lar) topildi:', conv.telegram_user_id, '| soni:', missed.length);
+      for (const m of missed) {
+        const sender = await m.getSender();
+        if (!sender || sender.className !== 'User' || sender.bot) continue;
+        await processCustomerMessage(client, sender, (m.text || '').trim());
+        await updateConversation(conv.id, { last_telegram_msg_id: m.id });
+      }
+    } catch (err) {
+      log('Catch-up xato (' + conv.telegram_user_id + '):', err.message);
+    }
+  }
+}
+
 async function main() {
   const client = new TelegramClient(new StringSession(TG_SESSION), TG_API_ID, TG_API_HASH, { connectionRetries: 5 });
   await client.connect();
@@ -250,10 +345,29 @@ async function main() {
   }, FOLLOWUP_INTERVAL_MS);
   log('Follow-up scheduler yoqildi, interval:', FOLLOWUP_INTERVAL_MS / 60000, 'daqiqa');
 
+  const CATCHUP_INTERVAL_MS = Number(process.env.CATCHUP_INTERVAL_MINUTES || 5) * 60 * 1000;
+  setInterval(() => {
+    catchUpMissedMessages(client).catch((err) => log('Catch-up tsikli xato:', err.message));
+  }, CATCHUP_INTERVAL_MS);
+  log('Catch-up scheduler yoqildi, interval:', CATCHUP_INTERVAL_MS / 60000, 'daqiqa');
+
+  // teleproto/Telegram ba'zan bir xil xabar uchun updatesни ikki marta yuborishi
+  // mumkin — shu tufayli bitta so'rovga bir necha marta javob yozilib qolgan edi.
+  // Xabar ID (chat+msgId) bo'yicha dublikatni ushlab qolamiz.
+  const seenMessageIds = new Set();
+  function isDuplicate(chatId, msgId) {
+    const key = `${chatId}:${msgId}`;
+    if (seenMessageIds.has(key)) return true;
+    seenMessageIds.add(key);
+    if (seenMessageIds.size > 5000) seenMessageIds.clear(); // xotira sizmasin
+    return false;
+  }
+
   client.addEventHandler(async (event) => {
     try {
       const message = event.message;
       if (!message || message.out) return;
+      if (isDuplicate(message.chatId?.toString() || message.peerId?.toString(), message.id)) return;
       const sender = await message.getSender();
       const chat = await message.getChat();
 
@@ -295,64 +409,9 @@ async function main() {
         return;
       }
 
-      await markReadNaturally(client, sender.id);
-
-      const { conversation, isNew } = await getOrCreateConversation(sender.id.toString(), sender.username, sender.firstName);
-      if (conversation.ai_muted) return; // odam ushlagan — AI jim (07_GUARDRAILS #4)
-
-      await logMessage(conversation.id, 'in', text);
-      await updateConversation(conversation.id, { last_customer_message_at: new Date().toISOString(), followup_stage: 0 });
-
-      if (isNew) {
-        const { ok } = await checkDailyLimit(DAILY_LIMIT);
-        if (!ok) {
-          await escalateToOperator(client, conversation, 'kunlik_limit', text);
-          await client.sendMessage(sender.id, { message: 'Assalomu alaykum! Menejerimiz tez orada siz bilan bog\'lanadi 👍' });
-          return;
-        }
-        await incrementDailyUsage('new_conversations');
-      }
-
-      const phone = extractPhone(text);
-      if (phone && !conversation.phone) {
-        await updateConversation(conversation.id, { phone });
-        const leadId = await upsertLead({ name: sender.firstName, phone, note: 'Telegram AI Sotuvchi orqali', stage: 'telefon oldi' }).catch(() => null);
-        if (leadId) await updateConversation(conversation.id, { krayin_lead_id: leadId });
-      }
-
-      const history = await sb(
-        `telegram_messages?conversation_id=eq.${conversation.id}&select=direction,text&order=sent_at.asc&limit=30`
-      );
-      const rawAnswer = await callClaude(history || [], DOCS_DIR);
-      const { text: draftText, escalate: aiEscalate } = extractAiEscalationMarker(rawAnswer);
-      const hardReason = checkHardEscalation(text);
-      const escalate = aiEscalate || !!hardReason;
-      const escalateReason = hardReason || (aiEscalate ? 'ai_marker' : null);
-
-      if (TRIAL_MODE) {
-        const who = sender.username ? '@' + sender.username : sender.firstName;
-        const sentDraft = await client.sendMessage(OPERATOR_GROUP_ID, {
-          message:
-            `🆕 Mijoz: ${who} (ID: ${sender.id})${escalate ? '  ⚠️ ESKALATSIYA' : ''}\n\n` +
-            `Mijoz yozdi: "${text}"\n\nAI javobi:\n${draftText}\n\n` +
-            `✅ deb javob bering — shu matn ketadi. Boshqa matn yozsangiz — o'sha matn ketadi.`,
-        });
-        pendingDrafts.set(sentDraft.id, {
-          conversationId: conversation.id,
-          telegramUserId: sender.id,
-          draftText,
-          escalate,
-          escalateReason,
-          conversation,
-          lastCustomerText: text,
-        });
-        await logMessage(conversation.id, 'out', draftText, true);
-      } else {
-        await sendHuman(client, sender.id, draftText);
-        await logMessage(conversation.id, 'out', draftText);
-        await updateConversation(conversation.id, { last_ai_message_at: new Date().toISOString() });
-        if (escalate) await escalateToOperator(client, conversation, escalateReason, text);
-      }
+      await processCustomerMessage(client, sender, text);
+      const { conversation } = await getOrCreateConversation(sender.id.toString(), sender.username, sender.firstName);
+      await updateConversation(conversation.id, { last_telegram_msg_id: message.id });
     } catch (err) {
       console.error('Xabar qayta ishlashda xato:', err);
     }
