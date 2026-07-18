@@ -148,14 +148,50 @@ async function callClaude(history, docsDir) {
   return answer || "Kechirasiz, hozir javob bera olmadim, operatorimiz tez orada yozadi.";
 }
 
-async function sendHuman(client, peer, text) {
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function randomMs(minSec, maxSec) {
+  return (minSec + Math.random() * (maxSec - minSec)) * 1000;
+}
+
+// 07_GUARDRAILS #7 / texnik_TZ #1 — tabiiy tezlik: xabar kelgach 3-4s "o'qildi",
+// keyin "yozyapti", 5-7s dan keyin javob. Har safar ozgina tasodifiy (patternga
+// tushmaslik uchun). Telegramning "typing" holati ~5s da tugaydi, shuning uchun
+// 5s dan uzun kutishda uni qayta yuboramiz.
+async function markReadNaturally(client, senderId) {
+  await sleep(randomMs(3, 4));
   try {
-    const inputPeer = await client.getInputEntity(peer);
-    await client.invoke(new Api.messages.SetTyping({ peer: inputPeer, action: new Api.SendMessageTypingAction() }));
+    await client.markAsRead(senderId);
   } catch (err) {
-    log('typing xato:', err.message);
+    log('markAsRead xato:', err.message);
   }
-  await new Promise((r) => setTimeout(r, 3000 + Math.random() * 3000)); // 3-6s "o'qildi"+"yozyapti"
+}
+
+async function sendHuman(client, peer, text) {
+  let inputPeer = null;
+  try {
+    inputPeer = await client.getInputEntity(peer);
+  } catch (err) {
+    log('getInputEntity xato:', err.message);
+  }
+
+  const totalDelay = randomMs(5, 7);
+  const refreshEvery = 4000;
+  let elapsed = 0;
+  while (elapsed < totalDelay) {
+    if (inputPeer) {
+      try {
+        await client.invoke(new Api.messages.SetTyping({ peer: inputPeer, action: new Api.SendMessageTypingAction() }));
+      } catch (err) {
+        log('typing xato:', err.message);
+      }
+    }
+    const step = Math.min(refreshEvery, totalDelay - elapsed);
+    await sleep(step);
+    elapsed += step;
+  }
   await client.sendMessage(peer, { message: text });
 }
 
@@ -238,11 +274,7 @@ async function main() {
         return;
       }
 
-      try {
-        await client.markAsRead(sender.id);
-      } catch (err) {
-        log('markAsRead xato:', err.message);
-      }
+      await markReadNaturally(client, sender.id);
 
       const { conversation, isNew } = await getOrCreateConversation(sender.id.toString(), sender.username, sender.firstName);
       if (conversation.ai_muted) return; // odam ushlagan — AI jim (07_GUARDRAILS #4)
