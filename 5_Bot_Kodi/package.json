@@ -1,0 +1,14 @@
+{
+  "name": "telegram-ai-seller-v2",
+  "version": "2.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node telegram-ai-seller.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "dotenv": "^16.4.5",
+    "teleproto": "^1.228.2"
+  }
+}
