@@ -20,6 +20,9 @@ const {
   checkDailyLimit,
   incrementDailyUsage,
 } = require('./src/guardrails');
+const { runFollowupCycle } = require('./src/followup');
+
+const FOLLOWUP_INTERVAL_MS = Number(process.env.FOLLOWUP_INTERVAL_MINUTES || 25) * 60 * 1000;
 
 const TG_API_ID = Number(process.env.TG_API_ID);
 const TG_API_HASH = process.env.TG_API_HASH;
@@ -228,6 +231,24 @@ async function main() {
   await client.connect();
   const me = await client.getMe();
   log('Telegram AI Sotuvchi (v2) ishga tushdi:', me.username, '| TRIAL_MODE =', TRIAL_MODE, '| DOCS_DIR =', DOCS_DIR);
+
+  // 05_FOLLOW_UP / texnik_TZ #7 — javobsiz suhbatlarni davriy tekshirish.
+  const followupDeps = {
+    client,
+    anthropic,
+    docsDir: DOCS_DIR,
+    sendHuman,
+    logMessage,
+    updateConversation,
+    incrementDailyUsage,
+    checkDailyLimit,
+    dailyLimit: DAILY_LIMIT,
+    log,
+  };
+  setInterval(() => {
+    runFollowupCycle(followupDeps).catch((err) => log('Follow-up tsikli xato:', err.message));
+  }, FOLLOWUP_INTERVAL_MS);
+  log('Follow-up scheduler yoqildi, interval:', FOLLOWUP_INTERVAL_MS / 60000, 'daqiqa');
 
   client.addEventHandler(async (event) => {
     try {
