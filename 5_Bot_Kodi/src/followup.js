@@ -50,7 +50,7 @@ async function generateFollowup(anthropic, history, stage, docsDir) {
   const resp = await anthropic.messages.create({
     model: 'claude-sonnet-5',
     max_tokens: 16000,
-    system: systemPrompt,
+    system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
     messages: msgs,
   });
   return resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();

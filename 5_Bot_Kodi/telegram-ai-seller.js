@@ -121,7 +121,10 @@ async function callClaude(history, docsDir) {
     const resp = await anthropic.messages.create({
       model: 'claude-sonnet-5',
       max_tokens: 16000,
-      system: systemPrompt,
+      // Prompt caching: system prompt (~15-18K token) har so'rovda o'zgarmaydi,
+      // shuning uchun keshlanadi — narxni sezilarli kamaytiradi (bitta suhbatda
+      // 2-4 marta chaqirilgani uchun ayniqsa muhim).
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
       tools: allowTools ? [HISOBLA_TOOL, NASIYA_TOOL] : undefined,
       messages: msgs,
     });
