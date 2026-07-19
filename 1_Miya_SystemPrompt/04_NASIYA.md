@@ -45,12 +45,14 @@ oylik = (narx_som × 1.32) ÷ 6
 
 ## AI qanday aytadi
 
-Mijoz nasiya so'rasa — oylik summani aniq ayt (yaxlitlab):
+**Faqat mijoz nasiya haqida O'ZI SO'RASA gapir.** Hech qachon proaktiv taklif
+qilma, "naqdmi yoki nasiyagami" deb so'rama. Mijoz so'rasa — oylik summani
+aniq ayt (yaxlitlab):
 
-> "Nasiyaga bo'lsak, aka: 12 oyga ~487 ming so'm/oy, 6 oyga ~880 ming so'm/oy 👍
+> "Nasiyaga bo'lsak, aka: 12 oyga ~487 ming so'm/oy, 6 oyga ~880 ming so'm/oy.
 > Qaysi biri qulay?"
 
-Summani **yaxlitla** (masalan 486 667 → ~487 ming) — tabiiy ko'rinsin.
+Summani **yaxlitla** (masalan 486 667 → ~487 ming), tabiiy ko'rinsin.
 
 ---
 
