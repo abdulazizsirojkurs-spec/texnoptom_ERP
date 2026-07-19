@@ -31,6 +31,11 @@ const OPERATOR_GROUP_ID = process.env.OPERATOR_GROUP_ID ? BigInt(process.env.OPE
 const TRIAL_MODE = (process.env.TRIAL_MODE || 'true') !== 'false';
 const DOCS_DIR = process.env.DOCS_DIR || path.join(__dirname, 'ai-sotuvchi-docs');
 const DAILY_LIMIT = Number(process.env.DAILY_LIMIT || 50);
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
+// Sonnet/Opus "adaptive thinking"ni qo'llaydi, bu javob uzunligini oshiradi —
+// Haiku qo'llamaydi, shuning uchun max_tokens ham shunga qarab tanlanadi.
+const USE_THINKING = /sonnet|opus/i.test(CLAUDE_MODEL);
+const MAX_TOKENS = USE_THINKING ? 16000 : 4096;
 
 for (const [k, v] of Object.entries({ TG_API_ID, TG_API_HASH, TG_SESSION, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY })) {
   if (!v) {
@@ -119,8 +124,8 @@ async function callClaude(history, docsDir) {
       });
     }
     const resp = await anthropic.messages.create({
-      model: 'claude-sonnet-5',
-      max_tokens: 16000,
+      model: CLAUDE_MODEL,
+      max_tokens: MAX_TOKENS,
       // Prompt caching: system prompt (~15-18K token) har so'rovda o'zgarmaydi,
       // shuning uchun keshlanadi — narxni sezilarli kamaytiradi (bitta suhbatda
       // 2-4 marta chaqirilgani uchun ayniqsa muhim).

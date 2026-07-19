@@ -2,6 +2,9 @@
 const { sb } = require('./db');
 const { buildSystemPrompt } = require('./prompt');
 
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
+const MAX_TOKENS = /sonnet|opus/i.test(CLAUDE_MODEL) ? 16000 : 4096;
+
 // 05_FOLLOW_UP — 3 bosqichli ketma-ketlik: jimlikdan +2-3s (shu kun),
 // +1 kun, +3 kun, keyin to'xtaydi. Vaqtlar millisekundda, ozgina tasodifiy
 // oraliq bilan (masalan 2-3 soat -> 2.5 soat o'rtacha nuqta sifatida olinadi,
@@ -48,8 +51,8 @@ async function generateFollowup(anthropic, history, stage, docsDir) {
   msgs.push({ role: 'user', content: '[TIZIM: mijoz javob bermadi, follow-up yozish kerak]' });
 
   const resp = await anthropic.messages.create({
-    model: 'claude-sonnet-5',
-    max_tokens: 16000,
+    model: CLAUDE_MODEL,
+    max_tokens: MAX_TOKENS,
     system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
     messages: msgs,
   });
