@@ -47,6 +47,12 @@ for (const [k, v] of Object.entries({ TG_API_ID, TG_API_HASH, TG_SESSION, ANTHRO
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const pendingDrafts = new Map(); // draftMessageId -> { conversationId, telegramUserId, draftText, escalate, conversation }
 
+// Bot o'zi yuborgan xabar ID'lari — shu orqali operator/boshqa odam shu
+// akkauntdan QO'LDA yuborgan xabarni bot yuborgan xabardan ajratamiz.
+const ourSentMessageIds = new Set();
+const DEBOUNCE_MS = Number(process.env.DEBOUNCE_MS || 3500);
+const STUCK_LOOP_LIMIT = Number(process.env.STUCK_LOOP_LIMIT || 8);
+
 function log(...args) {
   console.log(`[${new Date().toISOString()}]`, ...args);
 }
@@ -203,7 +209,14 @@ async function sendHuman(client, peer, text) {
     await sleep(step);
     elapsed += step;
   }
-  await client.sendMessage(peer, { message: text });
+  const sent = await client.sendMessage(peer, { message: text });
+  // Shu xabar ID'sini "bizniki" deb belgilaymiz — operator/boshqa odam
+  // qo'lda yozgan xabardan ajratish uchun (pastdagi out-xabar tekshiruvi).
+  if (sent?.id) {
+    ourSentMessageIds.add(sent.id);
+    if (ourSentMessageIds.size > 5000) ourSentMessageIds.clear();
+  }
+  return sent;
 }
 
 function escalationLabel(reason) {
@@ -234,29 +247,28 @@ async function escalateToOperator(client, conversation, reason, lastCustomerText
   await client.sendMessage(OPERATOR_GROUP_ID, { message });
 }
 
-// Mijozdan kelgan bitta xabarni to'liq qayta ishlaydi: xotira, guardrail,
-// Claude, javob yuborish. Ham jonli event handler, ham catch-up mexanizmi
-// (pastda) shu bir funksiyani chaqiradi — ikkalasida ham bir xil mantiq.
-async function processCustomerMessage(client, sender, text) {
-  await markReadNaturally(client, sender.id);
-
+// Mijozdan kelgan (bir yoki bir necha parchadan yig'ilgan) xabarni to'liq
+// qayta ishlaydi: xotira, guardrail, Claude, javob yuborish. Ham jonli
+// debounce-tsikli, ham catch-up mexanizmi shu bir funksiyani chaqiradi.
+// "combinedText" — faqat telefon/kalit-so'z tekshiruvi uchun; suhbat tarixi
+// har doim DB'dan olinadi (fragmentlar allaqachon alohida-alohida yozilgan).
+async function processCustomerMessage(client, sender, combinedText, isNewHint) {
+  // Konversatsiyani yangidan o'qiymiz — ai_muted holati oxirgi soniyada
+  // o'zgargan bo'lishi mumkin (masalan operator qo'lda aralashgan bo'lsa).
   const { conversation, isNew } = await getOrCreateConversation(sender.id.toString(), sender.username, sender.firstName);
   if (conversation.ai_muted) return; // odam ushlagan — AI jim (07_GUARDRAILS #4)
 
-  await logMessage(conversation.id, 'in', text);
-  await updateConversation(conversation.id, { last_customer_message_at: new Date().toISOString(), followup_stage: 0 });
-
-  if (isNew) {
+  if (isNewHint ?? isNew) {
     const { ok } = await checkDailyLimit(DAILY_LIMIT);
     if (!ok) {
-      await escalateToOperator(client, conversation, 'kunlik_limit', text);
+      await escalateToOperator(client, conversation, 'kunlik_limit', combinedText);
       await client.sendMessage(sender.id, { message: 'Assalomu alaykum! Menejerimiz tez orada siz bilan bog\'lanadi 👍' });
       return;
     }
     await incrementDailyUsage('new_conversations');
   }
 
-  const phone = extractPhone(text);
+  const phone = extractPhone(combinedText);
   if (phone && !conversation.phone) {
     await updateConversation(conversation.id, { phone });
     const leadId = await upsertLead({ name: sender.firstName, phone, note: 'Telegram AI Sotuvchi orqali', stage: 'telefon oldi' }).catch(() => null);
@@ -268,16 +280,25 @@ async function processCustomerMessage(client, sender, text) {
   );
   const rawAnswer = await callClaude(history || [], DOCS_DIR);
   const { text: draftText, escalate: aiEscalate } = extractAiEscalationMarker(rawAnswer);
-  const hardReason = checkHardEscalation(text);
-  const escalate = aiEscalate || !!hardReason;
-  const escalateReason = hardReason || (aiEscalate ? 'ai_marker' : null);
+  const hardReason = checkHardEscalation(combinedText);
+  let escalate = aiEscalate || !!hardReason;
+  let escalateReason = hardReason || (aiEscalate ? 'ai_marker' : null);
+
+  // Cheksiz aylanish (bir xil savol-javob N martadan ortiq takrorlanishi) —
+  // hal bo'lmasa, majburiy eskalatsiya (06/07_GUARDRAILS #5).
+  const nextStuck = escalate ? 0 : (conversation.stuck_counter || 0) + 1;
+  if (!escalate && nextStuck >= STUCK_LOOP_LIMIT) {
+    escalate = true;
+    escalateReason = 'stuck_loop';
+  }
+  await updateConversation(conversation.id, { stuck_counter: escalate ? 0 : nextStuck });
 
   if (TRIAL_MODE) {
     const who = sender.username ? '@' + sender.username : sender.firstName;
     const sentDraft = await client.sendMessage(OPERATOR_GROUP_ID, {
       message:
         `🆕 Mijoz: ${who} (ID: ${sender.id})${escalate ? '  ⚠️ ESKALATSIYA' : ''}\n\n` +
-        `Mijoz yozdi: "${text}"\n\nAI javobi:\n${draftText}\n\n` +
+        `Mijoz yozdi: "${combinedText}"\n\nAI javobi:\n${draftText}\n\n` +
         `✅ deb javob bering — shu matn ketadi. Boshqa matn yozsangiz — o'sha matn ketadi.`,
     });
     pendingDrafts.set(sentDraft.id, {
@@ -287,15 +308,39 @@ async function processCustomerMessage(client, sender, text) {
       escalate,
       escalateReason,
       conversation,
-      lastCustomerText: text,
+      lastCustomerText: combinedText,
     });
     await logMessage(conversation.id, 'out', draftText, true);
   } else {
     await sendHuman(client, sender.id, draftText);
     await logMessage(conversation.id, 'out', draftText);
     await updateConversation(conversation.id, { last_ai_message_at: new Date().toISOString() });
-    if (escalate) await escalateToOperator(client, conversation, escalateReason, text);
+    if (escalate) await escalateToOperator(client, conversation, escalateReason, combinedText);
   }
+}
+
+// Debouncing (texnik_TZ + xatolar tahlili): mijoz fikrini bir necha ketma-ket
+// xabarga bo'lib yuborsa (masalan "Avtosadka" / "Menga" / "CS2"), bularning
+// har biriga alohida javob yozish notabiy va takroriy ko'rinadi. Shuning
+// uchun DEBOUNCE_MS ichida kelgan xabarlarni yig'ib, bittagina javob beramiz.
+const pendingBuffers = new Map(); // senderKey -> { texts: [], timer, isNew }
+
+function scheduleDebounced(client, sender, text, isNew) {
+  const key = sender.id.toString();
+  let buf = pendingBuffers.get(key);
+  if (!buf) {
+    buf = { texts: [], timer: null, isNew };
+    pendingBuffers.set(key, buf);
+  }
+  buf.texts.push(text);
+  if (buf.timer) clearTimeout(buf.timer);
+  buf.timer = setTimeout(() => {
+    pendingBuffers.delete(key);
+    const combinedText = buf.texts.join('\n');
+    processCustomerMessage(client, sender, combinedText, buf.isNew).catch((err) => {
+      console.error('Debounce qayta ishlashda xato:', err);
+    });
+  }, DEBOUNCE_MS);
 }
 
 // MTProto ba'zan uzoq ulanishda live update yubormay qo'yishi mumkin (avval
@@ -320,8 +365,13 @@ async function catchUpMissedMessages(client) {
       for (const m of missed) {
         const sender = await m.getSender();
         if (!sender || sender.className !== 'User' || sender.bot) continue;
-        await processCustomerMessage(client, sender, (m.text || '').trim());
-        await updateConversation(conv.id, { last_telegram_msg_id: m.id });
+        const text = (m.text || '').trim();
+        if (!text) { await updateConversation(conv.id, { last_telegram_msg_id: m.id }); continue; }
+        // Debounce mantig'ida xabar avval loglanadi, keyin generatsiya
+        // qilinadi — catch-up ham shu tartibga rioya qiladi.
+        await logMessage(conv.id, 'in', text);
+        await updateConversation(conv.id, { last_customer_message_at: new Date().toISOString(), followup_stage: 0, last_telegram_msg_id: m.id });
+        await processCustomerMessage(client, sender, text);
       }
     } catch (err) {
       log('Catch-up xato (' + conv.telegram_user_id + '):', err.message);
@@ -374,8 +424,40 @@ async function main() {
   client.addEventHandler(async (event) => {
     try {
       const message = event.message;
-      if (!message || message.out) return;
+      if (!message) return;
       if (isDuplicate(message.chatId?.toString() || message.peerId?.toString(), message.id)) return;
+
+      // ── Chiquvchi (out) xabar: bizniki yoki operator qo'lda yozganmi? ──
+      if (message.out) {
+        if (ourSentMessageIds.has(message.id)) {
+          ourSentMessageIds.delete(message.id);
+          return; // bot o'zi yuborgan, kutilgan holat
+        }
+        // Bot bilmagan chiquvchi xabar — demak operator shu akkauntdan
+        // TO'G'RIDAN-TO'G'RI, bizning kodimiz orqali emas, qo'lda yozdi.
+        // AI + odam bir mijozga bir vaqtda javob berib chalkashtirmasligi
+        // uchun, shu suhbatni darhol AI'dan olib qo'yamiz (07_GUARDRAILS #4).
+        try {
+          const chat = await message.getChat();
+          if (chat?.className === 'User') {
+            const { conversation } = await getOrCreateConversation(chat.id.toString(), chat.username, chat.firstName);
+            if (!conversation.ai_muted) {
+              await updateConversation(conversation.id, { ai_muted: true, status: 'handed_off', handoff_reason: 'operator_manual' });
+              await logMessage(conversation.id, 'out', (message.text || '').trim(), false);
+              log('Operator qo\'lda aralashdi, AI to\'xtatildi:', chat.id.toString());
+              if (OPERATOR_GROUP_ID) {
+                await client.sendMessage(OPERATOR_GROUP_ID, {
+                  message: `ℹ️ Operator shu mijozga qo'lda yozdi — AI shu suhbatda avtomatik jim qilindi.\n👤 Mijoz: ${chat.username ? '@' + chat.username : chat.firstName || chat.id}`,
+                });
+              }
+            }
+          }
+        } catch (err) {
+          log('Qo\'lda xabarni aniqlashda xato:', err.message);
+        }
+        return;
+      }
+
       const sender = await message.getSender();
       const chat = await message.getChat();
 
@@ -417,9 +499,21 @@ async function main() {
         return;
       }
 
-      await processCustomerMessage(client, sender, text);
-      const { conversation } = await getOrCreateConversation(sender.id.toString(), sender.username, sender.firstName);
-      await updateConversation(conversation.id, { last_telegram_msg_id: message.id });
+      await markReadNaturally(client, sender.id);
+      const { conversation, isNew } = await getOrCreateConversation(sender.id.toString(), sender.username, sender.firstName);
+      if (conversation.ai_muted) return; // odam ushlagan — AI jim
+
+      await logMessage(conversation.id, 'in', text);
+      await updateConversation(conversation.id, {
+        last_customer_message_at: new Date().toISOString(),
+        followup_stage: 0,
+        last_telegram_msg_id: message.id,
+      });
+
+      // Debouncing: mijoz fikrini bir necha ketma-ket xabarga bo'lib yuborsa,
+      // DEBOUNCE_MS kutib, bittagina yaxlit javob beramiz (07_GUARDRAILS +
+      // xatolar tahlili — alohida-alohida javob berish notabiy ko'rinardi).
+      scheduleDebounced(client, sender, text, isNew);
     } catch (err) {
       console.error('Xabar qayta ishlashda xato:', err);
     }
