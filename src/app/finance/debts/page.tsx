@@ -53,10 +53,13 @@ export default function DebtsPage() {
       const orderIds = (ps || []).map((p: any) => p.order_id);
       if (orderIds.length === 0) { setChannelsData([]); return; }
 
+      // Faqat OTGRUZKA QILINGAN buyurtmalar haqiqiy qarz hisoblanadi — hali
+      // jo'natilmagan yoki vozvrat qilingan buyurtma qarzdorlar ro'yxatiga kirmasligi kerak.
       const { data: orders, error: ordErr } = await supabase
         .from('sales_orders')
         .select('id, order_code, client_name, client_phone, client_address, sales_channel, created_at')
-        .in('id', orderIds);
+        .in('id', orderIds)
+        .eq('is_shipped', true);
       if (ordErr) throw ordErr;
 
       const remainingById: Record<string, number> = {};
