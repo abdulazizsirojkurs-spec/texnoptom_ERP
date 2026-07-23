@@ -37,7 +37,13 @@ export default function KassaPage() {
   const [exchangeRate, setExchangeRate] = useState('');
   const [note, setNote] = useState('');
   const [supplierId, setSupplierId] = useState('');
-  const [supplierUsdAmount, setSupplierUsdAmount] = useState('');
+  // Avval "Balansdan yechiladigan summa ($)" deb operatordan alohida, hech
+  // narsaga bog'liq bo'lmagan dollar summasini qo'lda so'rardik — bu operator
+  // xato qilib to'g'ridan-to'g'ri so'm summasini yozib qo'yishiga olib kelardi
+  // (masalan Daryan balansida 7,102,500 "$" bo'lib yozilib qolgan edi, aslida
+  // ~$580 bo'lishi kerak edi). Endi kurs narxini so'raymiz va USD summani
+  // to'lov summasidan (agar hisob so'mda bo'lsa) avtomatik hisoblaymiz.
+  const [supplierExchangeRate, setSupplierExchangeRate] = useState('');
   const [salaryEmployeeId, setSalaryEmployeeId] = useState('');
   const [salaryMonth, setSalaryMonth] = useState(() => new Date().getMonth());
   const [saving, setSaving] = useState(false);
@@ -114,12 +120,23 @@ export default function KassaPage() {
   const filteredChartAccounts = chartAccounts.filter(c => c.flow_sign === (direction === 'income' ? '+' : '-'));
   const isSalaryPayment = direction === 'expense' && SALARY_ACCOUNT_CODES.includes(accountCode);
 
+  // Postavshik balansidan yechiladigan USD summa: agar kassa hisobi USD bo'lsa,
+  // to'lov summasi allaqachon dollarda (kurs kerak emas). Agar so'mda bo'lsa —
+  // kiritilgan kurs narxiga bo'lib hisoblanadi.
+  const supplierPaymentIsUsdAccount = selectedCashAccount?.currency === 'USD';
+  const supplierNeedsRate = !!supplierId && direction === 'expense' && !supplierPaymentIsUsdAccount;
+  const computedSupplierUsd = !supplierId || direction !== 'expense'
+    ? 0
+    : supplierPaymentIsUsdAccount
+      ? Number(amount || 0)
+      : (supplierExchangeRate ? Number(amount || 0) / Number(supplierExchangeRate) : 0);
+
   const resetForm = (keepContext: boolean) => {
     setEditingId(null);
     setAmount('');
     setNote('');
     setSupplierId('');
-    setSupplierUsdAmount('');
+    setSupplierExchangeRate('');
     setSalaryEmployeeId('');
     setSalaryMonth(new Date().getMonth());
     if (!keepContext) {
@@ -167,8 +184,12 @@ export default function KassaPage() {
       alert("USD hisob uchun kurs kiritilishi shart!");
       return;
     }
-    if (supplierId && direction === 'expense' && !supplierUsdAmount) {
-      alert("Postavshik balansidan yechiladigan summani ($) kiriting!");
+    if (supplierNeedsRate && !supplierExchangeRate) {
+      alert("Postavshikka to'lov uchun kurs narxini kiriting!");
+      return;
+    }
+    if (supplierId && direction === 'expense' && computedSupplierUsd <= 0) {
+      alert("Postavshik balansidan yechiladigan summa 0 dan katta bo'lishi kerak!");
       return;
     }
     if (isSalaryPayment && !salaryEmployeeId) {
@@ -204,11 +225,13 @@ export default function KassaPage() {
         if (error) throw error;
 
         // Postavshikka to'lov qilingan bo'lsa, uning USD balansini kamaytiramiz
-        // (faqat yangi yozuvda — tahrirlashda balans avtomatik qayta hisoblanmaydi)
-        if (supplierId && direction === 'expense' && supplierUsdAmount) {
+        // (faqat yangi yozuvda — tahrirlashda balans avtomatik qayta hisoblanmaydi).
+        // computedSupplierUsd — to'lov summasidan (agar hisob so'mda bo'lsa, kurs
+        // narxiga bo'lib) avtomatik hisoblangan, qo'lda xato kiritish xavfi yo'q.
+        if (supplierId && direction === 'expense' && computedSupplierUsd > 0) {
           const sup = suppliers.find(s => s.id === supplierId);
           if (sup) {
-            await supabase.from('suppliers').update({ balance: Number(sup.balance) - Number(supplierUsdAmount) }).eq('id', supplierId);
+            await supabase.from('suppliers').update({ balance: Number(sup.balance) - computedSupplierUsd }).eq('id', supplierId);
           }
         }
 
@@ -492,17 +515,30 @@ export default function KassaPage() {
                 ))}
               </select>
             </div>
-            {supplierId && (
+            {supplierId && supplierPaymentIsUsdAccount && (
               <div>
-                <label className="field-label">Balansdan yechiladigan summa ($)</label>
+                <label className="field-label">Balansdan yechiladi</label>
+                <div className="input-field" style={{ borderColor: '#f59e0b', background: '#fffbeb', display: 'flex', alignItems: 'center' }}>
+                  ${computedSupplierUsd.toLocaleString('uz-UZ', { maximumFractionDigits: 2 })}
+                </div>
+              </div>
+            )}
+            {supplierId && !supplierPaymentIsUsdAccount && (
+              <div>
+                <label className="field-label">Kurs narxi</label>
                 <input
                   type="number"
                   className="input-field"
-                  placeholder="0"
-                  value={supplierUsdAmount}
-                  onChange={e => setSupplierUsdAmount(e.target.value)}
+                  placeholder="masalan 12600"
+                  value={supplierExchangeRate}
+                  onChange={e => setSupplierExchangeRate(e.target.value)}
                   style={{ borderColor: '#f59e0b', background: '#fffbeb' }}
                 />
+                {supplierExchangeRate && amount && (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    ≈ ${computedSupplierUsd.toLocaleString('uz-UZ', { maximumFractionDigits: 2 })} balansdan yechiladi
+                  </div>
+                )}
               </div>
             )}
           </div>
