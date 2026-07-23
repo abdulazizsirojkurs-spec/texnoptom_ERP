@@ -147,6 +147,22 @@ export default function KassaPage() {
     setTimeout(() => amountRef.current?.focus(), 50);
   };
 
+  // Xatolar tahlili (2026-07-23): postavshikka to'lov o'chirilganda/tahrirlanganda
+  // balans avtomatik qaytarilmasdi (masalan Daryan balansi shu sababli buzilib
+  // qolgan edi — 2 ta xato yozuv o'chirilgan, lekin balans qaytmagan). Bu
+  // funksiya bitta tranzaksiyaning postavshik balansiga qancha ta'sir qilganini
+  // saqlangan maydonlardan (expense, exchange_rate, hisob valyutasi) qayta
+  // hisoblaydi — shu orqali o'chirish/tahrirlashda aniq qaytarish mumkin.
+  const getSupplierUsdImpact = (t: any) => {
+    if (!t?.supplier_id) return 0;
+    const expenseAmt = Number(t.expense || 0);
+    if (expenseAmt <= 0) return 0;
+    const acc = cashAccounts.find(c => c.id === t.cash_account_id);
+    if (acc?.currency === 'USD') return expenseAmt;
+    if (t.exchange_rate) return expenseAmt / Number(t.exchange_rate);
+    return 0; // kursi saqlanmagan eski noto'g'ri yozuvlar — avtomatik tuzatib bo'lmaydi
+  };
+
   const handleEdit = (t: any) => {
     setEditingId(t.id);
     setDirection(t.income > 0 ? 'income' : 'expense');
@@ -156,18 +172,33 @@ export default function KassaPage() {
     setAccountCode(t.account_code);
     setExchangeRate(t.exchange_rate ? String(t.exchange_rate) : '');
     setNote(t.comment || t.customer_name || '');
+    // Postavshik bog'lanishini ham tiklaymiz — aks holda tahrirlab saqlaganda
+    // supplier_id yo'qolib, balans hisob-kitobi buzilib qolardi.
+    setSupplierId(t.supplier_id || '');
+    setSupplierExchangeRate(t.supplier_id && t.exchange_rate ? String(t.exchange_rate) : '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => amountRef.current?.focus(), 300);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Bu tranzaksiyani o'chirasizmi? Bu amalni orqaga qaytarib bo'lmaydi!")) return;
+    const txn = transactions.find(t => t.id === id);
     const { error } = await supabase.from('cash_transactions').delete().eq('id', id);
     if (error) {
       alert('Xatolik: ' + error.message);
       return;
     }
+    if (txn?.supplier_id) {
+      const usdImpact = getSupplierUsdImpact(txn);
+      if (usdImpact > 0) {
+        const sup = suppliers.find(s => s.id === txn.supplier_id);
+        if (sup) {
+          await supabase.from('suppliers').update({ balance: Number(sup.balance) + usdImpact }).eq('id', txn.supplier_id);
+        }
+      }
+    }
     fetchTransactions();
+    fetchRefData();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -217,8 +248,31 @@ export default function KassaPage() {
       };
 
       if (editingId) {
+        const orig = transactions.find(t => t.id === editingId);
         const { error } = await supabase.from('cash_transactions').update(payload).eq('id', editingId);
         if (error) throw error;
+
+        // Postavshik balansini eski qiymatga qaytarib, yangisini qo'llaymiz
+        // (xatolar tahlili — avval tahrirlashda balans umuman qayta hisoblanmasdi).
+        const oldSupplierId = orig?.supplier_id || null;
+        const oldImpact = orig ? getSupplierUsdImpact(orig) : 0;
+        const newImpact = supplierId && direction === 'expense' ? computedSupplierUsd : 0;
+        if (oldSupplierId && oldSupplierId === supplierId) {
+          const sup = suppliers.find(s => s.id === supplierId);
+          if (sup) {
+            await supabase.from('suppliers').update({ balance: Number(sup.balance) + oldImpact - newImpact }).eq('id', supplierId);
+          }
+        } else {
+          if (oldSupplierId && oldImpact > 0) {
+            const supOld = suppliers.find(s => s.id === oldSupplierId);
+            if (supOld) await supabase.from('suppliers').update({ balance: Number(supOld.balance) + oldImpact }).eq('id', oldSupplierId);
+          }
+          if (supplierId && newImpact > 0) {
+            const supNew = suppliers.find(s => s.id === supplierId);
+            if (supNew) await supabase.from('suppliers').update({ balance: Number(supNew.balance) - newImpact }).eq('id', supplierId);
+          }
+        }
+
         setFlash("Tranzaksiya yangilandi ✓");
       } else {
         const { error } = await supabase.from('cash_transactions').insert(payload);
