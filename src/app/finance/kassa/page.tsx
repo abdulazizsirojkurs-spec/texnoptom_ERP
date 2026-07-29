@@ -241,7 +241,9 @@ export default function KassaPage() {
         expense: direction === 'expense' ? Number(amount) : 0,
         cash_account_id: cashAccountId,
         account_code: accountCode,
-        exchange_rate: needsExchangeRate ? Number(exchangeRate) : null,
+        exchange_rate: needsExchangeRate
+          ? Number(exchangeRate)
+          : (supplierNeedsRate ? Number(supplierExchangeRate) : null),
         comment: salaryNote || null,
         supplier_id: supplierId || null,
         created_by: user?.id || null,
