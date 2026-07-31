@@ -213,6 +213,11 @@ export default function WarehousePage() {
   const [vozvratSupplier, setVozvratSupplier] = useState('');
   const [vozvratProduct, setVozvratProduct] = useState('');
   const [vozvratQty, setVozvratQty] = useState('');
+  // Kelishilgan vozvrat summasi ($) — qo'lda kiritiladi, FIFO tannarxidan farq
+  // qilishi mumkin (masalan hamkor bilan boshqa narxda kelishilgan bo'lsa).
+  // FIFO faqat OMBORDAGI MIQDORNI to'g'ri partiyadan ayirish uchun ishlatiladi.
+  const [vozvratCost, setVozvratCost] = useState('');
+  const [vozvratFifoHint, setVozvratFifoHint] = useState<number | null>(null);
   const [vozvratReason, setVozvratReason] = useState('');
   const [vozvratLoading, setVozvratLoading] = useState(false);
   const [vozvratSuccess, setVozvratSuccess] = useState('');
@@ -508,14 +513,52 @@ export default function WarehousePage() {
 
   // FIFO'ni FAQAT shu hamkorning o'z partiyalaridan (receipt_docs.supplier_id) hisoblaydi
   // — boshqa hamkordan olingan tovar bilan aralashib ketmasligi uchun.
+  // Tovar/miqdor/hamkor tanlanganda — faqat MA'LUMOT uchun FIFO tannarxini
+  // hisoblab ko'rsatadi (hech narsani o'zgartirmaydi). Foydalanuvchi buni
+  // kelishilgan summa sifatida ishlatishi shart emas, faqat solishtirish uchun.
+  useEffect(() => {
+    let cancelled = false;
+    async function computeHint() {
+      if (!vozvratProduct || !vozvratSupplier || !vozvratQty || Number(vozvratQty) <= 0) {
+        setVozvratFifoHint(null);
+        return;
+      }
+      const { data: batches } = await supabase
+        .from('receipt_items')
+        .select('remaining_quantity, incoming_price, receipt_docs!inner(supplier_id)')
+        .eq('product_id', vozvratProduct)
+        .eq('receipt_docs.supplier_id', vozvratSupplier)
+        .gt('remaining_quantity', 0)
+        .order('created_at', { ascending: true });
+      if (cancelled) return;
+      if (!batches || batches.length === 0) { setVozvratFifoHint(null); return; }
+      let qty = Number(vozvratQty);
+      let cost = 0;
+      for (const b of batches as any[]) {
+        if (qty <= 0) break;
+        const d = Math.min(b.remaining_quantity, qty);
+        qty -= d;
+        cost += d * b.incoming_price;
+      }
+      setVozvratFifoHint(qty <= 0 ? cost : null);
+    }
+    computeHint();
+    return () => { cancelled = true; };
+  }, [vozvratProduct, vozvratSupplier, vozvratQty]);
+
   const handleVozvratSubmit = async () => {
     if (!vozvratSupplier) { alert("Hamkorni tanlang!"); return; }
     if (!vozvratProduct || !vozvratQty || Number(vozvratQty) <= 0) { alert("Tovar va miqdorni kiriting!"); return; }
+    if (!vozvratCost || Number(vozvratCost) <= 0) { alert("Vozvrat summasini ($) kiriting!"); return; }
     setVozvratLoading(true); setVozvratSuccess('');
     try {
+      const totalCost = Number(vozvratCost);
       const { data: bal } = await supabase.from('inventory_balances').select('quantity').eq('product_id', vozvratProduct).single();
       if (!bal || bal.quantity < Number(vozvratQty)) { alert(`Yetersiz qoldiq! Mavjud: ${bal?.quantity || 0} ta`); setVozvratLoading(false); return; }
 
+      // FIFO — faqat OMBORDAGI MIQDORNI shu hamkorning o'z partiyasidan to'g'ri
+      // ayirish uchun (qaysi kirim hujjatiga tegishli ekanini kuzatib borish).
+      // Summaga (totalCost) bu ta'sir qilmaydi — u yuqorida foydalanuvchi kiritgan.
       const { data: batches } = await supabase
         .from('receipt_items')
         .select('*, receipt_docs!inner(supplier_id)')
@@ -527,12 +570,10 @@ export default function WarehousePage() {
       if (!batches || batches.length === 0) { alert("Bu hamkordan shu tovar bo'yicha ochiq partiya topilmadi!"); setVozvratLoading(false); return; }
 
       let qtyToDeduct = Number(vozvratQty);
-      let totalCost = 0;
       for (const batch of batches) {
         if (qtyToDeduct <= 0) break;
         const deduct = Math.min(batch.remaining_quantity, qtyToDeduct);
         qtyToDeduct -= deduct;
-        totalCost += deduct * batch.incoming_price;
         await supabase.from('receipt_items').update({ remaining_quantity: batch.remaining_quantity - deduct }).eq('id', batch.id);
       }
       if (qtyToDeduct > 0) { alert("Xato: shu hamkordan olingan partiyalarda yetarli qoldiq yo'q!"); setVozvratLoading(false); return; }
@@ -551,7 +592,7 @@ export default function WarehousePage() {
       if (sup) await supabase.from('suppliers').update({ balance: Number(sup.balance) - totalCost }).eq('id', vozvratSupplier);
 
       setVozvratSuccess(`Vozvrat qilindi! Hamkor balansidan $${totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ayirildi.`);
-      setVozvratProduct(''); setVozvratQty(''); setVozvratSearchTerm(''); setVozvratReason('');
+      setVozvratProduct(''); setVozvratQty(''); setVozvratSearchTerm(''); setVozvratReason(''); setVozvratCost(''); setVozvratFifoHint(null);
       fetchData();
     } catch (err: any) { alert("Xato: " + err.message); } finally { setVozvratLoading(false); }
   };
@@ -818,6 +859,21 @@ export default function WarehousePage() {
             <div>
               <label style={{ display: 'block', marginBottom: '8px' }}>Miqdor</label>
               <input type="number" value={vozvratQty} onChange={(e) => setVozvratQty(e.target.value)} placeholder="0" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid var(--border)' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px' }}>Vozvrat summasi ($)</label>
+              <input
+                type="number"
+                value={vozvratCost}
+                onChange={(e) => setVozvratCost(e.target.value)}
+                placeholder="masalan 67"
+                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #f59e0b', background: '#fffbeb' }}
+              />
+              {vozvratFifoHint !== null && (
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Taxminiy tannarx (FIFO): ${vozvratFifoHint.toLocaleString(undefined, { maximumFractionDigits: 2 })} — kerak bo'lsa yuqoridagi summani shunga moslab yoki boshqacha kiriting.
+                </div>
+              )}
             </div>
             <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
               <label style={{ display: 'block', marginBottom: '8px' }}>Tovarni tanlang (Qidiruv)</label>
