@@ -6,7 +6,7 @@ import { ArrowDownCircle, ArrowUpCircle, Download, Edit, Trash2, X, Check, Arrow
 
 type CashAccount = { id: string; name: string; currency: string };
 type ChartAccount = { id: string; code: string; name: string; flow_sign: '+' | '-'; group_name: string };
-type Supplier = { id: string; name: string; balance: number };
+type Supplier = { id: string; name: string; balance: number; legacy_debt_usd?: number | null };
 type Employee = { id: string; full_name: string; department: string };
 
 const SALARY_ACCOUNT_CODES = ['13001', '14003', '15007']; // Nakladnoy/Adminstrativ/Tijoriy ish haqi
@@ -44,6 +44,11 @@ export default function KassaPage() {
   // ~$580 bo'lishi kerak edi). Endi kurs narxini so'raymiz va USD summani
   // to'lov summasidan (agar hisob so'mda bo'lsa) avtomatik hisoblaymiz.
   const [supplierExchangeRate, setSupplierExchangeRate] = useState('');
+  // Eski qarz (legacy_debt_usd) bo'lgan hamkorlar uchun — bu to'lov "tovar
+  // balansi"gami yoki "eski qarz"gami degan aniq tanlov (matn yozish o'rniga,
+  // xato/unutish ehtimolini yo'qotish uchun). Faqat legacy_debt_usd o'rnatilgan
+  // hamkor tanlanganda ko'rinadi, boshqalarda hech narsaga ta'sir qilmaydi.
+  const [isLegacyPayment, setIsLegacyPayment] = useState(false);
   const [salaryEmployeeId, setSalaryEmployeeId] = useState('');
   const [salaryMonth, setSalaryMonth] = useState(() => new Date().getMonth());
   const [saving, setSaving] = useState(false);
@@ -70,7 +75,7 @@ export default function KassaPage() {
   const fetchRefData = async () => {
     const { data: ca } = await supabase.from('cash_accounts').select('id, name, currency').eq('is_active', true).eq('is_virtual', false).order('sort_order');
     const { data: coa } = await supabase.from('chart_of_accounts').select('id, code, name, flow_sign, group_name').eq('is_active', true).order('sort_order');
-    const { data: sup } = await supabase.from('suppliers').select('id, name, balance').order('name');
+    const { data: sup } = await supabase.from('suppliers').select('id, name, balance, legacy_debt_usd').order('name');
     const { data: emp } = await supabase.from('employees').select('id, full_name, department').eq('is_active', true).order('full_name');
     if (emp) setEmployees(emp);
     if (ca) {
@@ -123,6 +128,8 @@ export default function KassaPage() {
   // Postavshik balansidan yechiladigan USD summa: agar kassa hisobi USD bo'lsa,
   // to'lov summasi allaqachon dollarda (kurs kerak emas). Agar so'mda bo'lsa —
   // kiritilgan kurs narxiga bo'lib hisoblanadi.
+  const selectedSupplier = suppliers.find(s => s.id === supplierId);
+  const supplierHasLegacyDebt = !!selectedSupplier?.legacy_debt_usd;
   const supplierPaymentIsUsdAccount = selectedCashAccount?.currency === 'USD';
   const supplierNeedsRate = !!supplierId && direction === 'expense' && !supplierPaymentIsUsdAccount;
   const computedSupplierUsd = !supplierId || direction !== 'expense'
@@ -137,6 +144,7 @@ export default function KassaPage() {
     setNote('');
     setSupplierId('');
     setSupplierExchangeRate('');
+    setIsLegacyPayment(false);
     setSalaryEmployeeId('');
     setSalaryMonth(new Date().getMonth());
     if (!keepContext) {
@@ -176,6 +184,7 @@ export default function KassaPage() {
     // supplier_id yo'qolib, balans hisob-kitobi buzilib qolardi.
     setSupplierId(t.supplier_id || '');
     setSupplierExchangeRate(t.supplier_id && t.exchange_rate ? String(t.exchange_rate) : '');
+    setIsLegacyPayment(!!t.is_legacy_payment);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => amountRef.current?.focus(), 300);
   };
@@ -246,6 +255,7 @@ export default function KassaPage() {
           : (supplierNeedsRate ? Number(supplierExchangeRate) : null),
         comment: salaryNote || null,
         supplier_id: supplierId || null,
+        is_legacy_payment: supplierId && direction === 'expense' && supplierHasLegacyDebt ? isLegacyPayment : false,
         created_by: user?.id || null,
       };
 
@@ -571,6 +581,44 @@ export default function KassaPage() {
                 ))}
               </select>
             </div>
+            {supplierId && direction === 'expense' && supplierHasLegacyDebt && (
+              <div>
+                <label className="field-label">To'lov turi</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsLegacyPayment(false)}
+                    className="btn"
+                    style={{
+                      flex: 1, padding: '8px 10px', fontSize: '0.85rem',
+                      background: !isLegacyPayment ? 'var(--accent-600)' : 'var(--gray-100)',
+                      color: !isLegacyPayment ? '#fff' : 'var(--text-primary)',
+                      border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    📦 Tovar balansi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsLegacyPayment(true)}
+                    className="btn"
+                    style={{
+                      flex: 1, padding: '8px 10px', fontSize: '0.85rem',
+                      background: isLegacyPayment ? 'var(--accent-600)' : 'var(--gray-100)',
+                      color: isLegacyPayment ? '#fff' : 'var(--text-primary)',
+                      border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    📌 Eski qarz
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                  Bu hamkorda eski qarz ($
+                  {Number(selectedSupplier?.legacy_debt_usd).toLocaleString('uz-UZ')}) bor — to'lov qaysi qismga
+                  tegishli ekanini tanlang, ikkisi aralashib ketmasligi uchun.
+                </div>
+              </div>
+            )}
             {supplierId && supplierPaymentIsUsdAccount && (
               <div>
                 <label className="field-label">Balansdan yechiladi</label>

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   Home, Package, ShoppingCart, FileText, Wallet, TrendingUp, ArrowDownUp,
   Scale, Truck, Users, HandCoins, Award, CalendarClock, Building2, Settings,
-  LayoutDashboard, X, LogOut,
+  LayoutDashboard, X, LogOut, Bot,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
@@ -43,6 +43,10 @@ export default function Sidebar({ isOpen = false, onClose }: { isOpen?: boolean,
 
       <nav className="sidebar-nav">
         <NavLink href="/" icon={Home}>Dashboard</NavLink>
+
+        {role === 'admin' && (
+          <NavLink href="/ofis" icon={Bot}>AI Agentlar Ofisi</NavLink>
+        )}
 
         {(role === 'admin' || role === 'sotuvchi') && (
           <>
