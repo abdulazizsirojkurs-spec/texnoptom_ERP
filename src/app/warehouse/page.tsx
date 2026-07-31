@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { PackagePlus, FileText, TrendingUp, Trash2, History, DollarSign, Users, AlertTriangle, AlertCircle } from 'lucide-react';
+import { PackagePlus, FileText, TrendingUp, Trash2, History, DollarSign, Users, AlertTriangle, AlertCircle, ArrowLeftRight } from 'lucide-react';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
 
@@ -205,6 +205,19 @@ export default function WarehousePage() {
   const [spisSuccess, setSpisSuccess] = useState('');
   const [spisSearchTerm, setSpisSearchTerm] = useState('');
   const [showSpisDropdown, setShowSpisDropdown] = useState(false);
+
+  // Hamkorga vozvrat (2026-07-31) — sotib olingan tovarni hamkorga qaytarish:
+  // ombordan kamayadi VA hamkor balansidan (qarzimizdan) tovar qiymati ayiriladi,
+  // BITTA amalda — Spisaniya (zarar) bilan aralashtirmasdan, qo'lda ikki bosqichda
+  // qilib xato qilib qo'yish xavfisiz.
+  const [vozvratSupplier, setVozvratSupplier] = useState('');
+  const [vozvratProduct, setVozvratProduct] = useState('');
+  const [vozvratQty, setVozvratQty] = useState('');
+  const [vozvratReason, setVozvratReason] = useState('');
+  const [vozvratLoading, setVozvratLoading] = useState(false);
+  const [vozvratSuccess, setVozvratSuccess] = useState('');
+  const [vozvratSearchTerm, setVozvratSearchTerm] = useState('');
+  const [showVozvratDropdown, setShowVozvratDropdown] = useState(false);
 
   // Tarix (History) states
   const [historyDocs, setHistoryDocs] = useState<any[]>([]);
@@ -493,6 +506,56 @@ export default function WarehousePage() {
     } catch (err: any) { alert("Xato: " + err.message); } finally { setSpisLoading(false); }
   };
 
+  // FIFO'ni FAQAT shu hamkorning o'z partiyalaridan (receipt_docs.supplier_id) hisoblaydi
+  // — boshqa hamkordan olingan tovar bilan aralashib ketmasligi uchun.
+  const handleVozvratSubmit = async () => {
+    if (!vozvratSupplier) { alert("Hamkorni tanlang!"); return; }
+    if (!vozvratProduct || !vozvratQty || Number(vozvratQty) <= 0) { alert("Tovar va miqdorni kiriting!"); return; }
+    setVozvratLoading(true); setVozvratSuccess('');
+    try {
+      const { data: bal } = await supabase.from('inventory_balances').select('quantity').eq('product_id', vozvratProduct).single();
+      if (!bal || bal.quantity < Number(vozvratQty)) { alert(`Yetersiz qoldiq! Mavjud: ${bal?.quantity || 0} ta`); setVozvratLoading(false); return; }
+
+      const { data: batches } = await supabase
+        .from('receipt_items')
+        .select('*, receipt_docs!inner(supplier_id)')
+        .eq('product_id', vozvratProduct)
+        .eq('receipt_docs.supplier_id', vozvratSupplier)
+        .gt('remaining_quantity', 0)
+        .order('created_at', { ascending: true });
+
+      if (!batches || batches.length === 0) { alert("Bu hamkordan shu tovar bo'yicha ochiq partiya topilmadi!"); setVozvratLoading(false); return; }
+
+      let qtyToDeduct = Number(vozvratQty);
+      let totalCost = 0;
+      for (const batch of batches) {
+        if (qtyToDeduct <= 0) break;
+        const deduct = Math.min(batch.remaining_quantity, qtyToDeduct);
+        qtyToDeduct -= deduct;
+        totalCost += deduct * batch.incoming_price;
+        await supabase.from('receipt_items').update({ remaining_quantity: batch.remaining_quantity - deduct }).eq('id', batch.id);
+      }
+      if (qtyToDeduct > 0) { alert("Xato: shu hamkordan olingan partiyalarda yetarli qoldiq yo'q!"); setVozvratLoading(false); return; }
+
+      const { data: ret } = await supabase.from('supplier_returns')
+        .insert([{ supplier_id: vozvratSupplier, product_id: vozvratProduct, quantity: Number(vozvratQty), cost_value: totalCost, reason: vozvratReason || null }])
+        .select().single();
+
+      await supabase.from('inventory_balances').update({ quantity: bal.quantity - Number(vozvratQty), updated_at: new Date() }).eq('product_id', vozvratProduct);
+      await supabase.from('inventory_transactions').insert([{
+        product_id: vozvratProduct, transaction_type: 'vozvrat_hamkorga', quantity_change: -Number(vozvratQty),
+        price: totalCost / Number(vozvratQty), reference_id: ret?.id,
+      }]);
+
+      const sup = suppliers.find((s: any) => s.id === vozvratSupplier);
+      if (sup) await supabase.from('suppliers').update({ balance: Number(sup.balance) - totalCost }).eq('id', vozvratSupplier);
+
+      setVozvratSuccess(`Vozvrat qilindi! Hamkor balansidan $${totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ayirildi.`);
+      setVozvratProduct(''); setVozvratQty(''); setVozvratSearchTerm(''); setVozvratReason('');
+      fetchData();
+    } catch (err: any) { alert("Xato: " + err.message); } finally { setVozvratLoading(false); }
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
@@ -528,17 +591,18 @@ export default function WarehousePage() {
       
       {/* TABS */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px', flexWrap: 'wrap' }}>
-        {['katalog', 'kirim', 'spisaniya', 'tarix', 'qoldiq', 'hamkorlar']
-          .filter(tab => !(userRole === 'skladchi' && tab === 'spisaniya'))
+        {['katalog', 'kirim', 'spisaniya', 'hamkorga_vozvrat', 'tarix', 'qoldiq', 'hamkorlar']
+          .filter(tab => !(userRole === 'skladchi' && (tab === 'spisaniya' || tab === 'hamkorga_vozvrat')))
           .map(tab => (
           <button key={tab} className={`btn ${activeTab === tab ? 'btn-primary' : ''}`} onClick={() => setActiveTab(tab)} style={{ background: activeTab === tab ? 'var(--primary)' : 'var(--surface)', color: activeTab === tab ? 'white' : 'var(--text-primary)', border: '1px solid var(--border)', textTransform: 'capitalize' }}>
              {tab === 'katalog' && <PackagePlus size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'kirim' && <FileText size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'spisaniya' && <AlertTriangle size={18} style={{ marginRight: '8px' }}/>}
+             {tab === 'hamkorga_vozvrat' && <ArrowLeftRight size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'tarix' && <History size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'qoldiq' && <TrendingUp size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'hamkorlar' && <Users size={18} style={{ marginRight: '8px' }}/>}
-             {tab === 'katalog' ? 'Tovar Baza (Katalog)' : tab === 'kirim' ? 'Kirim (Nakladnoy)' : tab === 'spisaniya' ? 'Hisobdan Chiqarish (Spisaniya)' : tab === 'qoldiq' ? "Ombor Qoldig'i (Analitika)" : tab}
+             {tab === 'katalog' ? 'Tovar Baza (Katalog)' : tab === 'kirim' ? 'Kirim (Nakladnoy)' : tab === 'spisaniya' ? 'Hisobdan Chiqarish (Spisaniya)' : tab === 'hamkorga_vozvrat' ? 'Hamkorga Vozvrat' : tab === 'qoldiq' ? "Ombor Qoldig'i (Analitika)" : tab}
           </button>
         ))}
       </div>
@@ -728,6 +792,65 @@ export default function WarehousePage() {
           </div>
           <button className="btn btn-primary" onClick={handleSpisaniyaSubmit} disabled={spisLoading} style={{ backgroundColor: '#dc2626' }}>
             {spisLoading ? "Chiqarilmoqda..." : "Hisobdan Chiqarish (Zarar)"}
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'hamkorga_vozvrat' && (
+        <div className="card">
+          <h2 style={{ marginBottom: '8px', fontSize: '1.2rem' }}>Hamkorga Tovar Vozvrat</h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '0.85rem' }}>
+            Sotib olingan tovarni hamkorga qaytarganda ishlatiladi — ombordan kamayadi VA hamkorga bo'lgan
+            qarzimizdan tovar qiymati bir vaqtda ayiriladi (Spisaniya'dan farqli — bu zarar emas).
+          </p>
+          {vozvratSuccess && <div style={{ padding: '12px', backgroundColor: '#dcfce7', color: '#166534', borderRadius: '4px', marginBottom: '20px' }}>{vozvratSuccess}</div>}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px' }}>Hamkor</label>
+              <select value={vozvratSupplier} onChange={(e) => setVozvratSupplier(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                <option value="">Tanlang...</option>
+                {suppliers.map((s: any) => (
+                  <option key={s.id} value={s.id}>{s.name} (joriy qarz: ${Number(s.balance).toLocaleString('uz-UZ')})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px' }}>Miqdor</label>
+              <input type="number" value={vozvratQty} onChange={(e) => setVozvratQty(e.target.value)} placeholder="0" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid var(--border)' }} />
+            </div>
+            <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
+              <label style={{ display: 'block', marginBottom: '8px' }}>Tovarni tanlang (Qidiruv)</label>
+              <input
+                type="text"
+                placeholder="Tovar nomini yozing..."
+                value={vozvratSearchTerm}
+                onFocus={() => setShowVozvratDropdown(true)}
+                onBlur={() => setTimeout(() => setShowVozvratDropdown(false), 200)}
+                onChange={(e) => setVozvratSearchTerm(e.target.value)}
+                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid var(--border)' }}
+              />
+              {showVozvratDropdown && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'white', border: '1px solid var(--border)', maxHeight: '200px', overflowY: 'auto', zIndex: 10, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
+                  {products.filter((p: any) => p.name.toLowerCase().includes(vozvratSearchTerm.toLowerCase())).map((prod: any) => (
+                    <div
+                      key={prod.id}
+                      onClick={() => { setVozvratProduct(prod.id); setVozvratSearchTerm(prod.name); setShowVozvratDropdown(false); }}
+                      style={{ padding: '10px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                    >
+                      {prod.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ display: 'block', marginBottom: '8px' }}>Izoh (ixtiyoriy)</label>
+              <input type="text" value={vozvratReason} onChange={(e) => setVozvratReason(e.target.value)} placeholder="masalan: nosoz chiqdi" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid var(--border)' }} />
+            </div>
+          </div>
+          <button className="btn btn-primary" onClick={handleVozvratSubmit} disabled={vozvratLoading}>
+            {vozvratLoading ? "Bajarilmoqda..." : "Hamkorga Qaytarish"}
           </button>
         </div>
       )}
