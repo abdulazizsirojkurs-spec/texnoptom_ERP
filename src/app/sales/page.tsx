@@ -102,7 +102,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder }: any) => {
 };
 
 function SalesContent() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
   const editOrderId = searchParams.get('edit');
@@ -348,6 +348,25 @@ function SalesContent() {
       setLoading(false);
     }
   };
+
+  // Skladchi bu sahifaga (narx bor to'liq sotuv formasi) kira olmaydi.
+  // U buyurtmani "Buyurtmalar" ro'yxatidagi tovar-tuzatish oynasi orqali tayyorlaydi.
+  if (role === 'skladchi') {
+    return (
+      <div style={{ maxWidth: 480, margin: '48px auto', textAlign: 'center' }}>
+        <div className="card" style={{ padding: 28 }}>
+          <h2 style={{ marginTop: 0 }}>Bu sahifa sizga ochiq emas</h2>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            Skladchi sifatida siz buyurtma narxini o'zgartira olmaysiz. Buyurtmalarni tekshirish,
+            tovar/miqdorni tuzatish va otgruzkaga tayyorlash uchun "Buyurtmalar" bo'limiga o'ting.
+          </p>
+          <button onClick={() => router.push('/sales/orders')} className="btn btn-primary">
+            Buyurtmalarga o'tish
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

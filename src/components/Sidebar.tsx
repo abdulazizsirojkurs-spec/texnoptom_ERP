@@ -60,6 +60,9 @@ export default function Sidebar({ isOpen = false, onClose }: { isOpen?: boolean,
           <>
             <div className="nav-group-label">Ombor</div>
             <NavLink href="/warehouse" icon={Package}>Ombor va Katalog</NavLink>
+            {role === 'skladchi' && (
+              <NavLink href="/sales/orders" icon={ShoppingCart}>Buyurtmalar (tayyorlash)</NavLink>
+            )}
           </>
         )}
 

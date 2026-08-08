@@ -37,9 +37,12 @@ export default function SalesOrdersPage() {
   const [itemsOrder, setItemsOrder] = useState<any>(null);
   const [itemsSaving, setItemsSaving] = useState<string | null>(null); // saqlanayotgan item id (yoki 'new')
   const [products, setProducts] = useState<any[]>([]);
+  const [stockMap, setStockMap] = useState<Record<string, number>>({}); // product_id -> ombor qoldig'i
   const [newItemCategory, setNewItemCategory] = useState('');
   const [newItemProductId, setNewItemProductId] = useState('');
   const [newItemQty, setNewItemQty] = useState('1');
+
+  const isSkladchi = role === 'skladchi';
 
   useEffect(() => {
     if (user) {
@@ -52,6 +55,15 @@ export default function SalesOrdersPage() {
       .then(({ data }) => { if (data) { setCashAccounts(data); setModalCashAccountId(data[0]?.id || ''); } });
     supabase.from('products').select('*, categories(name)')
       .then(({ data }) => { if (data) setProducts(data); });
+    // Ombor qoldig'i (skladchi faqat omborda bor tovarni qo'sha oladi)
+    supabase.from('inventory_balances').select('product_id, quantity')
+      .then(({ data }) => {
+        if (data) {
+          const m: Record<string, number> = {};
+          data.forEach((b: any) => { m[b.product_id] = Number(b.quantity) || 0; });
+          setStockMap(m);
+        }
+      });
   }, []);
 
   const fetchOrders = async () => {
@@ -61,10 +73,11 @@ export default function SalesOrdersPage() {
       .select('*, sales_order_items(*)')
       .order('created_at', { ascending: false });
 
-    // Sotuvchilar faqat o'z buyurtmalarini ko'radi
-    if (role !== 'admin') {
+    // Sotuvchilar faqat o'z buyurtmalarini ko'radi.
+    // Skladchi (va admin) barcha buyurtmalarni ko'radi — ular tayyorlash/otgruzka uchun kerak.
+    if (role !== 'admin' && role !== 'skladchi') {
       query = query.eq('seller_id', user?.id);
-    } else if (sellerFilter) {
+    } else if (role === 'admin' && sellerFilter) {
       // Admin xodim (sotuvchi) ismi bo'yicha izlaydi
       query = query.ilike('seller_name', `%${sellerFilter}%`);
     }
@@ -150,6 +163,19 @@ export default function SalesOrdersPage() {
     router.push(`/sales?edit=${orderId}`);
   };
 
+  // Skladchi buyurtmani tekshirib bo'lgach "Tayyorlandi" deb belgilaydi.
+  // Bu — sklad → admin uzatish signali; otgruzka'ni baribir admin qiladi.
+  // Skladchi RLS orqali sales_orders'ga yoza olmaydi — xavfsiz RPC orqali (faqat status).
+  const markPrepared = async (orderId: string, prepared: boolean) => {
+    const newStatus = prepared ? 'Tayyorlandi' : 'Yangi buyurtma';
+    const { error } = await supabase.rpc('sklad_mark_prepared', { p_order_id: orderId, p_prepared: prepared });
+    if (error) {
+      alert('Xatolik: ' + error.message);
+    } else {
+      setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    }
+  };
+
   const accountCodeFor = (mode: 'payment' | 'delivery') => (mode === 'payment' ? '90001' : '13014');
 
   const fetchModalHistory = async (orderId: string, mode: 'payment' | 'delivery') => {
@@ -214,7 +240,10 @@ export default function SalesOrdersPage() {
     if (qty < 1) return;
     setItemsSaving(itemId);
     try {
-      const { error } = await supabase.from('sales_order_items').update({ quantity: qty }).eq('id', itemId);
+      // Skladchi RLS orqali yoza olmaydi — xavfsiz RPC orqali (faqat miqdor).
+      const { error } = isSkladchi
+        ? await supabase.rpc('sklad_set_item_qty', { p_item_id: itemId, p_qty: qty })
+        : await supabase.from('sales_order_items').update({ quantity: qty }).eq('id', itemId);
       if (error) throw error;
       if (itemsOrder) await refreshItemsOrder(itemsOrder.id);
     } catch (err: any) {
@@ -228,7 +257,9 @@ export default function SalesOrdersPage() {
     if (!confirm("Bu tovarni buyurtmadan o'chirasizmi?")) return;
     setItemsSaving(itemId);
     try {
-      const { error } = await supabase.from('sales_order_items').delete().eq('id', itemId);
+      const { error } = isSkladchi
+        ? await supabase.rpc('sklad_delete_item', { p_item_id: itemId })
+        : await supabase.from('sales_order_items').delete().eq('id', itemId);
       if (error) throw error;
       if (itemsOrder) await refreshItemsOrder(itemsOrder.id);
     } catch (err: any) {
@@ -245,23 +276,47 @@ export default function SalesOrdersPage() {
     if (!itemsOrder || !newItemProductId || Number(newItemQty) < 1) return;
     const product = products.find((p: any) => p.id === newItemProductId);
     if (!product) return;
+
+    // Skladchi faqat omborda mavjud (qoldig'i > 0) tovarni biriktira oladi.
+    if (isSkladchi) {
+      const stock = stockMap[product.id] ?? 0;
+      if (stock <= 0) {
+        alert(`"${product.name}" — hozir omborda yo'q bu tovardan.\n\nAvval omborga prixod (kirim) qiling, keyin buyurtmaga biriktira olasiz.`);
+        return;
+      }
+      if (Number(newItemQty) > stock) {
+        alert(`"${product.name}" — omborda faqat ${stock} dona bor, siz ${newItemQty} dona qo'shmoqchisiz.\n\nMiqdorni kamaytiring yoki avval omborga prixod qiling.`);
+        return;
+      }
+    }
+
     setItemsSaving('new');
     try {
-      const { data: bal } = await supabase
-        .from('inventory_balances')
-        .select('average_price')
-        .eq('product_id', product.id)
-        .maybeSingle();
-      const unitCostUsd = bal?.average_price && Number(bal.average_price) > 0 ? Number(bal.average_price) : null;
-
-      const { error } = await supabase.from('sales_order_items').insert({
-        order_id: itemsOrder.id,
-        category_name: newItemCategory,
-        product_id: product.id,
-        product_name: product.name,
-        quantity: Number(newItemQty),
-        unit_cost_usd: unitCostUsd,
-      });
+      let error: any;
+      if (isSkladchi) {
+        // Skladchi RLS orqali yoza olmaydi — xavfsiz RPC (tannarx serverda o'rnatiladi, stok qayta tekshiriladi).
+        ({ error } = await supabase.rpc('sklad_add_item', {
+          p_order_id: itemsOrder.id,
+          p_product_id: product.id,
+          p_qty: Number(newItemQty),
+          p_category: newItemCategory,
+        }));
+      } else {
+        const { data: bal } = await supabase
+          .from('inventory_balances')
+          .select('average_price')
+          .eq('product_id', product.id)
+          .maybeSingle();
+        const unitCostUsd = bal?.average_price && Number(bal.average_price) > 0 ? Number(bal.average_price) : null;
+        ({ error } = await supabase.from('sales_order_items').insert({
+          order_id: itemsOrder.id,
+          category_name: newItemCategory,
+          product_id: product.id,
+          product_name: product.name,
+          quantity: Number(newItemQty),
+          unit_cost_usd: unitCostUsd,
+        }));
+      }
       if (error) throw error;
       setNewItemCategory('');
       setNewItemProductId('');
@@ -355,6 +410,9 @@ export default function SalesOrdersPage() {
     if (is_shipped || status === 'Otgruzka qilindi' || status === 'Buyurtma topshirildi') {
       return <span style={{ backgroundColor: '#bfdbfe', color: '#1e3a8a', padding: '4px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Truck size={14}/> Otgruzka qilindi</span>;
     }
+    if (status === 'Tayyorlandi') {
+      return <span style={{ backgroundColor: '#ede9fe', color: '#6d28d9', padding: '4px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={14}/> Tayyorlandi (otgruzkaga)</span>;
+    }
 
     // Yangi buyurtma yoki qabul qilindi statusi sariq
     return <span style={{ backgroundColor: '#fef08a', color: '#854d0e', padding: '4px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Clock size={14}/> Yangi buyurtma</span>;
@@ -440,13 +498,13 @@ export default function SalesOrdersPage() {
                 <th style={{ padding: '16px' }}>Sana</th>
                 <th style={{ padding: '16px' }}>Status</th>
                 <th style={{ padding: '16px' }}>To'lov holati</th>
-                {role === 'admin' && <th style={{ padding: '16px', textAlign: 'right' }}>Amallar</th>}
+                {(role === 'admin' || isSkladchi) && <th style={{ padding: '16px', textAlign: 'right' }}>Amallar</th>}
               </tr>
             </thead>
             <tbody>
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={12} style={{ padding: '24px', textAlign: 'center' }}>Hozircha buyurtmalar yo'q.</td>
+                  <td colSpan={(role === 'admin' || isSkladchi) ? 12 : 11} style={{ padding: '24px', textAlign: 'center' }}>Hozircha buyurtmalar yo'q.</td>
                 </tr>
               ) : (
                 orders.map(order => (
@@ -501,12 +559,12 @@ export default function SalesOrdersPage() {
                           })}
                         </div>
                       )}
-                      {role === 'admin' && (
+                      {(role === 'admin' || isSkladchi) && !order.is_shipped && (
                         <button
                           onClick={() => openItemsModal(order)}
                           style={{ marginTop: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}
                         >
-                          <Edit size={12} /> Tahrirlash
+                          <Edit size={12} /> {isSkladchi ? 'Tovar/miqdorni tuzatish' : 'Tahrirlash'}
                         </button>
                       )}
                     </td>
@@ -613,6 +671,40 @@ export default function SalesOrdersPage() {
                             <option value="Vozvrat qilindi">Vozvrat (Qizil)</option>
                           </select>
 
+                        </div>
+                      </td>
+                    )}
+                    {isSkladchi && (
+                      <td style={{ padding: '16px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {order.is_shipped ? (
+                            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Otgruzka qilingan</span>
+                          ) : (order.status === 'Vozvrat qilindi' || order.status === 'Rad etildi') ? (
+                            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>—</span>
+                          ) : order.status === 'Tayyorlandi' ? (
+                            <>
+                              <span style={{ fontSize: '0.8rem', color: '#6d28d9', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <CheckCircle size={14} /> Tayyor
+                              </span>
+                              <button
+                                onClick={() => markPrepared(order.id, false)}
+                                title="Tayyorlashni bekor qilish"
+                                className="btn"
+                                style={{ background: '#f1f5f9', color: '#475569', padding: '6px 10px', fontSize: '0.78rem', fontWeight: 600 }}
+                              >
+                                Bekor
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => markPrepared(order.id, true)}
+                              title="Buyurtmani tekshirib bo'ldingizmi? Otgruzkaga tayyor deb belgilang"
+                              className="btn"
+                              style={{ background: '#7c3aed', color: 'white', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <CheckCircle size={14} /> Tayyorlash
+                            </button>
+                          )}
                         </div>
                       </td>
                     )}
@@ -780,7 +872,17 @@ export default function SalesOrdersPage() {
                 {newItemCategory && (
                   <select className="input-field" value={newItemProductId} onChange={e => setNewItemProductId(e.target.value)}>
                     <option value="">Tovar tanlang...</option>
-                    {filteredNewItemProducts.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {filteredNewItemProducts.map((p: any) => {
+                      const stock = stockMap[p.id] ?? 0;
+                      if (isSkladchi) {
+                        return (
+                          <option key={p.id} value={p.id} disabled={stock <= 0}>
+                            {p.name} — {stock > 0 ? `${stock} dona bor` : "omborda yo'q"}
+                          </option>
+                        );
+                      }
+                      return <option key={p.id} value={p.id}>{p.name}</option>;
+                    })}
                   </select>
                 )}
               </div>
