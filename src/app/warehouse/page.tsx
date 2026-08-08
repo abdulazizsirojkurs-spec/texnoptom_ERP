@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { PackagePlus, FileText, TrendingUp, Trash2, History, DollarSign, Users, AlertTriangle, AlertCircle, ArrowLeftRight } from 'lucide-react';
+import { PackagePlus, FileText, TrendingUp, Trash2, History, DollarSign, Users, AlertTriangle, AlertCircle, ArrowLeftRight, Plus, Check, Search } from 'lucide-react';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
 
@@ -58,6 +58,7 @@ export default function WarehousePage() {
   const [showKirimDropdown, setShowKirimDropdown] = useState(false);
   const [kirimLoading, setKirimLoading] = useState(false);
   const [kirimSuccess, setKirimSuccess] = useState('');
+  const [stockMap, setStockMap] = useState<Record<string, number>>({}); // product_id -> ombor qoldig'i (dropdown uchun)
 
   // Hamkorlar states
   const [editingSupplier, setEditingSupplier] = useState<string | null>(null);
@@ -259,6 +260,16 @@ export default function WarehousePage() {
 
         const { data: prodData } = await supabase.from('products').select(`*, categories(name)`);
         if (prodData) setProducts(prodData);
+
+        // Kirim tab uchun ombor qoldig'i (tovar qidiruvida "omborda: N" ko'rsatish)
+        if (activeTab === 'kirim') {
+          const { data: balData } = await supabase.from('inventory_balances').select('product_id, quantity');
+          if (balData) {
+            const m: Record<string, number> = {};
+            balData.forEach((b: any) => { m[b.product_id] = Number(b.quantity) || 0; });
+            setStockMap(m);
+          }
+        }
       }
 
       if (activeTab === 'tarix') {
@@ -728,59 +739,123 @@ export default function WarehousePage() {
       {/* KIRIM TAB */}
       {activeTab === 'kirim' && (
          <div className="card">
-           <h2 style={{ marginBottom: '16px', fontSize: '1.2rem' }}>Yangi Kirim Hujjati</h2>
-           {kirimSuccess && <div style={{ padding: '12px', backgroundColor: '#dcfce7', color: '#166534', borderRadius: '4px', marginBottom: '20px' }}>{kirimSuccess}</div>}
-           <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
-             <select value={selectedSupplier} onChange={(e) => setSelectedSupplier(e.target.value)} style={{ padding: '8px', border: '1px solid var(--border)', borderRadius: '4px', flex: 1 }}>
-               <option value="">Postavshik...</option>
-               {suppliers.map(sup => <option key={sup.id} value={sup.id}>{sup.name}</option>)}
-             </select>
-             
-             <div style={{ position: 'relative', flex: 2 }}>
-               <input 
-                 type="text" 
-                 placeholder="Tovar qidirish..." 
-                 value={kirimSearchTerm} 
-                 onFocus={() => setShowKirimDropdown(true)}
-                 onBlur={() => setTimeout(() => setShowKirimDropdown(false), 200)}
-                 onChange={(e) => setKirimSearchTerm(e.target.value)}
-                 style={{ padding: '8px', border: '1px solid var(--border)', borderRadius: '4px', width: '100%' }}
-               />
+           <h2 style={{ marginBottom: 4, fontSize: '1.2rem' }}>Yangi Kirim Hujjati</h2>
+           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 0, marginBottom: 16 }}>
+             Postavshik va tovarlarni tanlab ro'yxat tuzing, so'ng "Tasdiqlash"ni bosing.
+           </p>
+           {kirimSuccess && <div style={{ padding: '12px', backgroundColor: '#dcfce7', color: '#166534', borderRadius: 8, marginBottom: 16 }}>{kirimSuccess}</div>}
+
+           {/* ── TOVAR KIRITISH PANELI ── */}
+           <div className="kirim-entry">
+             <div>
+               <label className="field-label">Postavshik (Hamkor)</label>
+               <select className="input-field input-lg" value={selectedSupplier} onChange={(e) => setSelectedSupplier(e.target.value)}>
+                 <option value="">Tanlang...</option>
+                 {suppliers.map(sup => <option key={sup.id} value={sup.id}>{sup.name}</option>)}
+               </select>
+             </div>
+
+             <div style={{ position: 'relative' }}>
+               <label className="field-label">Tovar</label>
+               <div style={{ position: 'relative' }}>
+                 <Search size={18} color="var(--gray-400)" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                 <input
+                   type="text"
+                   className="input-field input-lg"
+                   placeholder="Tovar nomini yozib qidiring..."
+                   value={kirimSearchTerm}
+                   autoComplete="off"
+                   onFocus={() => setShowKirimDropdown(true)}
+                   onBlur={() => setTimeout(() => setShowKirimDropdown(false), 200)}
+                   onChange={(e) => { setKirimSearchTerm(e.target.value); setSelectedProduct(''); }}
+                   style={{ paddingLeft: 40, borderColor: selectedProduct ? 'var(--success-500)' : undefined }}
+                 />
+                 {selectedProduct && (
+                   <Check size={18} color="var(--success-500)" style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)' }} />
+                 )}
+               </div>
                {showKirimDropdown && (
-                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'white', border: '1px solid var(--border)', maxHeight: '200px', overflowY: 'auto', zIndex: 10, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
-                   {products.filter(p => p.name.toLowerCase().includes(kirimSearchTerm.toLowerCase())).map(prod => (
-                     <div 
-                       key={prod.id} 
-                       onClick={() => { setSelectedProduct(prod.id); setKirimSearchTerm(prod.name); setShowKirimDropdown(false); }}
-                       style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
-                     >
-                       {prod.name}
-                     </div>
-                   ))}
+                 <div className="kirim-search-menu">
+                   {(() => {
+                     const list = products.filter(p => p.name.toLowerCase().includes(kirimSearchTerm.toLowerCase())).slice(0, 80);
+                     if (list.length === 0) {
+                       return <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Topilmadi</div>;
+                     }
+                     return list.map(prod => {
+                       const stock = stockMap[prod.id] ?? 0;
+                       return (
+                         <div
+                           key={prod.id}
+                           className="kirim-search-item"
+                           onMouseDown={() => { setSelectedProduct(prod.id); setKirimSearchTerm(prod.name); setShowKirimDropdown(false); }}
+                         >
+                           <span className="name">{prod.name}</span>
+                           <span className={`stock ${stock <= 0 ? 'zero' : ''}`}>omborda: {stock}</span>
+                         </div>
+                       );
+                     });
+                   })()}
                  </div>
                )}
              </div>
 
-             <input type="number" placeholder="Soni" value={kirimQty} onChange={e=>setKirimQty(e.target.value)} style={{ width: '80px', padding: '8px', border: '1px solid var(--border)', borderRadius: '4px' }}/>
-             <input type="number" placeholder="Narx ($)" value={kirimPriceUsd} onChange={e=>setKirimPriceUsd(e.target.value)} style={{ width: '100px', padding: '8px', border: '1px solid var(--border)', borderRadius: '4px' }}/>
-             <button onClick={handleAddItemToReceipt} className="btn">Qo'shish</button>
+             <div className="kirim-two-col">
+               <div>
+                 <label className="field-label">Soni</label>
+                 <input type="number" inputMode="numeric" className="input-field input-lg" placeholder="0"
+                   value={kirimQty} onChange={e=>setKirimQty(e.target.value)} />
+               </div>
+               <div>
+                 <label className="field-label">Narx ($/dona)</label>
+                 <input type="number" inputMode="decimal" className="input-field input-lg" placeholder="0"
+                   value={kirimPriceUsd} onChange={e=>setKirimPriceUsd(e.target.value)} />
+               </div>
+             </div>
+
+             <button
+               onClick={handleAddItemToReceipt}
+               className="btn btn-primary kirim-add-btn"
+               disabled={!selectedProduct || !kirimQty || !kirimPriceUsd}
+             >
+               <Plus size={18} /> Ro'yxatga qo'shish
+               {selectedProduct && kirimQty && kirimPriceUsd
+                 ? ` — $${(Number(kirimQty) * Number(kirimPriceUsd)).toLocaleString()}`
+                 : ''}
+             </button>
            </div>
-           
-           <table style={{ width: '100%', textAlign: 'left', marginBottom: '16px' }}>
-             <thead><tr><th>Tovar</th><th>Soni</th><th>Narx ($)</th><th>Jami</th><th></th></tr></thead>
-             <tbody>
+
+           {/* ── QO'SHILGAN TOVARLAR RO'YXATI ── */}
+           {receiptItems.length === 0 ? (
+             <div className="kirim-empty">Hali tovar qo'shilmagan</div>
+           ) : (
+             <div style={{ marginBottom: 8 }}>
                {receiptItems.map((it, idx) => (
-                 <tr key={idx}><td>{it.product_name}</td><td>{it.quantity}</td><td>${it.incoming_price}</td><td>${it.total}</td><td><Trash2 size={16} onClick={()=>handleRemoveItem(idx)} cursor="pointer"/></td></tr>
+                 <div key={idx} className="kirim-item-row">
+                   <div className="kirim-item-info">
+                     <div className="kirim-item-name">{it.product_name}</div>
+                     <div className="kirim-item-sub">{it.quantity} dona × ${Number(it.incoming_price).toLocaleString()}</div>
+                   </div>
+                   <div className="kirim-item-total">${Number(it.total).toLocaleString()}</div>
+                   <button className="kirim-item-del" onClick={() => handleRemoveItem(idx)} title="O'chirish">
+                     <Trash2 size={16} />
+                   </button>
+                 </div>
                ))}
-             </tbody>
-           </table>
-           {receiptItems.length > 0 && (
-             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px', fontSize: '1.05rem' }}>
-               <span style={{ color: '#64748b', marginRight: '8px' }}>Nakladnoy bo'yicha jami:</span>
-               <strong>${receiptItems.reduce((sum, it) => sum + it.total, 0).toLocaleString()}</strong>
              </div>
            )}
-           <button className="btn btn-primary" onClick={handleSubmitReceipt} disabled={kirimLoading || receiptItems.length === 0}>{kirimLoading ? "Saqlanmoqda..." : "Tasdiqlash"}</button>
+
+           {/* ── JAMI + TASDIQLASH ── */}
+           {receiptItems.length > 0 && (
+             <div className="kirim-footer">
+               <div className="kirim-total-line">
+                 <span style={{ color: 'var(--text-secondary)' }}>Nakladnoy bo'yicha jami</span>
+                 <span className="amount">${receiptItems.reduce((sum, it) => sum + it.total, 0).toLocaleString()}</span>
+               </div>
+               <button className="btn btn-primary kirim-confirm-btn" onClick={handleSubmitReceipt} disabled={kirimLoading}>
+                 {kirimLoading ? "Saqlanmoqda..." : `✓ Tasdiqlash (${receiptItems.length} ta tovar)`}
+               </button>
+             </div>
+           )}
          </div>
       )}
 
