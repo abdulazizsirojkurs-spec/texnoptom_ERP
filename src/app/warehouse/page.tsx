@@ -50,6 +50,7 @@ export default function WarehousePage() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [kirimSana, setKirimSana] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedProduct, setSelectedProduct] = useState('');
   const [kirimQty, setKirimQty] = useState('');
   const [kirimPriceUsd, setKirimPriceUsd] = useState('');
@@ -451,13 +452,16 @@ export default function WarehousePage() {
       const totalAmountUsd = receiptItems.reduce((sum, item) => sum + item.total, 0);
       const { data: supTerm } = await supabase.from('suppliers').select('payment_term_days').eq('id', selectedSupplier).single();
       const termDays = supTerm?.payment_term_days || 0;
+      // Muddat KIRIM SANASIDAN hisoblanadi (bugungi kundan emas) — aks holda
+      // kechagi kirimni bugun kiritganda to'lov muddati bir kunga siljib ketardi.
+      const receiptDate = new Date(kirimSana + 'T12:00:00');
       let dueDate = null;
       if (termDays > 0) {
-        const date = new Date(); date.setDate(date.getDate() + termDays); dueDate = date.toISOString();
+        const date = new Date(receiptDate); date.setDate(date.getDate() + termDays); dueDate = date.toISOString();
       }
 
       const { data: receipt, error: receiptError } = await supabase.from('receipt_docs')
-        .insert([{ supplier_id: selectedSupplier, total_amount: totalAmountUsd, due_date: dueDate }]).select().single();
+        .insert([{ supplier_id: selectedSupplier, total_amount: totalAmountUsd, document_date: receiptDate.toISOString(), due_date: dueDate }]).select().single();
       if (receiptError) throw receiptError;
       
       for (const item of receiptItems) {
@@ -485,6 +489,7 @@ export default function WarehousePage() {
         await supabase.from('suppliers').update({ balance: Number(sup.balance) + totalAmountUsd }).eq('id', selectedSupplier);
       }
       setKirimSuccess("Kirim hujjati saqlandi!"); setReceiptItems([]); setSelectedSupplier('');
+      setKirimSana(new Date().toISOString().slice(0, 10));
     } catch (error: any) { alert("Xatolik: " + error.message); } 
     finally { setKirimLoading(false); }
   };
@@ -753,6 +758,17 @@ export default function WarehousePage() {
                  <option value="">Tanlang...</option>
                  {suppliers.map(sup => <option key={sup.id} value={sup.id}>{sup.name}</option>)}
                </select>
+             </div>
+
+             <div>
+               <label className="field-label">Kirim sanasi</label>
+               <input
+                 type="date"
+                 className="input-field input-lg"
+                 value={kirimSana}
+                 max={new Date().toISOString().slice(0, 10)}
+                 onChange={(e) => setKirimSana(e.target.value)}
+               />
              </div>
 
              <div style={{ position: 'relative' }}>
