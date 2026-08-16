@@ -128,7 +128,9 @@ export default function SalesOrdersPage() {
   };
 
   const handleOtgruzka = async (orderId: string) => {
-    if (role !== 'admin') return;
+    // 2026-08-17: skladga ham ochildi — haqiqiy himoya endi otgruzka_order RPC'ning
+    // o'zida (server-tomon rol tekshiruvi), bu shart shunchaki UI qulayligi uchun.
+    if (role !== 'admin' && role !== 'skladchi') return;
 
     if (!confirm("Rostdan ham bu buyurtmani otgruzka qilasizmi? Bu tovarlarni ombordan ayirib tashlaydi!")) return;
 
@@ -238,11 +240,18 @@ export default function SalesOrdersPage() {
 
   const handleItemQtyChange = async (itemId: string, qty: number) => {
     if (qty < 1) return;
+    // 2026-08-17: sklad har bir o'zgarish uchun sabab yozishi majburiy — CEO'ga
+    // real-vaqt Telegram xabar ketadi va order_edit_log'ga yoziladi (RPC ichida).
+    let reason: string | null = null;
+    if (isSkladchi) {
+      reason = prompt("Nima uchun miqdorni o'zgartiryapsiz? (sabab yozish majburiy)");
+      if (!reason || !reason.trim()) return;
+    }
     setItemsSaving(itemId);
     try {
       // Skladchi RLS orqali yoza olmaydi — xavfsiz RPC orqali (faqat miqdor).
       const { error } = isSkladchi
-        ? await supabase.rpc('sklad_set_item_qty', { p_item_id: itemId, p_qty: qty })
+        ? await supabase.rpc('sklad_set_item_qty', { p_item_id: itemId, p_qty: qty, p_reason: reason })
         : await supabase.from('sales_order_items').update({ quantity: qty }).eq('id', itemId);
       if (error) throw error;
       if (itemsOrder) await refreshItemsOrder(itemsOrder.id);
@@ -255,10 +264,15 @@ export default function SalesOrdersPage() {
 
   const handleItemDelete = async (itemId: string) => {
     if (!confirm("Bu tovarni buyurtmadan o'chirasizmi?")) return;
+    let reason: string | null = null;
+    if (isSkladchi) {
+      reason = prompt("Nima uchun bu tovarni o'chiryapsiz? (sabab yozish majburiy)");
+      if (!reason || !reason.trim()) return;
+    }
     setItemsSaving(itemId);
     try {
       const { error } = isSkladchi
-        ? await supabase.rpc('sklad_delete_item', { p_item_id: itemId })
+        ? await supabase.rpc('sklad_delete_item', { p_item_id: itemId, p_reason: reason })
         : await supabase.from('sales_order_items').delete().eq('id', itemId);
       if (error) throw error;
       if (itemsOrder) await refreshItemsOrder(itemsOrder.id);
@@ -290,6 +304,16 @@ export default function SalesOrdersPage() {
       }
     }
 
+    // 2026-08-17: buyurtmadagidan boshqa/qo'shimcha tovar qo'shish jiddiy o'zgarish
+    // (masalan mijoz bilan kelishmasdan boshqa model bilan almashtirish xavfi) —
+    // shuning uchun alohida ogohlantirish + majburiy sabab (CEO'ga darhol xabar boradi).
+    let addReason: string | null = null;
+    if (isSkladchi) {
+      if (!confirm(`"${product.name}" buyurtmaga qo'shiladi. Bu buyurtmadagidan BOSHQA/QO'SHIMCHA tovar — mijoz bilan kelishdingizmi?`)) return;
+      addReason = prompt("Sabab yozing (masalan: mijoz bilan kelishildi, boshqa model bilan almashtirildi):");
+      if (!addReason || !addReason.trim()) return;
+    }
+
     setItemsSaving('new');
     try {
       let error: any;
@@ -300,6 +324,7 @@ export default function SalesOrdersPage() {
           p_product_id: product.id,
           p_qty: Number(newItemQty),
           p_category: newItemCategory,
+          p_reason: addReason,
         }));
       } else {
         const { data: bal } = await supabase
@@ -693,6 +718,15 @@ export default function SalesOrdersPage() {
                                 style={{ background: '#f1f5f9', color: '#475569', padding: '6px 10px', fontSize: '0.78rem', fontWeight: 600 }}
                               >
                                 Bekor
+                              </button>
+                              {/* 2026-08-17: skladga otgruzka huquqi berildi — real himoya
+                                  otgruzka_order RPC'ning o'zida (server-tomon rol tekshiruvi). */}
+                              <button
+                                onClick={() => handleOtgruzka(order.id)}
+                                className="btn"
+                                style={{ background: '#10b981', color: 'white', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 'bold' }}
+                              >
+                                Otgruzka
                               </button>
                             </>
                           ) : (

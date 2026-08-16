@@ -61,6 +61,45 @@ export default function WarehousePage() {
   const [kirimSuccess, setKirimSuccess] = useState('');
   const [stockMap, setStockMap] = useState<Record<string, number>>({}); // product_id -> ombor qoldig'i (dropdown uchun)
 
+  // 2026-08-17 — Hamkorga to'lov (sklad uchun sodda forma): pul CEO'dan naqd/karta
+  // orqali olinadi, sklad shu yerda hamkor+summa+hisobni kiritadi. sklad_pay_supplier
+  // RPC orqali (account_code har doim '12002', sabab majburiy) — kassa sahifasidagi
+  // 8-9 maydonli to'liq formadan farqli, faqat 3-4 ta maydon.
+  const [htSupplier, setHtSupplier] = useState('');
+  const [htAmount, setHtAmount] = useState('');
+  const [htAccountId, setHtAccountId] = useState('');
+  const [htRate, setHtRate] = useState('');
+  const [htReason, setHtReason] = useState('');
+  const [htLoading, setHtLoading] = useState(false);
+  const [htSuccess, setHtSuccess] = useState('');
+  const htSelectedAccount = cashAccounts.find(c => c.id === htAccountId);
+
+  const handlePaySupplierSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!htSupplier) { alert("Hamkorni tanlang!"); return; }
+    if (!htAmount || Number(htAmount) <= 0) { alert("Summani kiriting!"); return; }
+    if (!htAccountId) { alert("Hisobni tanlang!"); return; }
+    if (!htRate || Number(htRate) <= 0) { alert("Kurs narxini kiriting!"); return; }
+    if (userRole === 'skladchi' && !htReason.trim()) { alert("Sabab yozish majburiy!"); return; }
+    setHtLoading(true); setHtSuccess('');
+    try {
+      const { error } = await supabase.rpc('sklad_pay_supplier', {
+        p_supplier_id: htSupplier,
+        p_amount: Number(htAmount),
+        p_cash_account_id: htAccountId,
+        p_exchange_rate: Number(htRate),
+        p_reason: htReason || null,
+      });
+      if (error) throw error;
+      setHtSuccess("To'lov saqlandi!");
+      setHtSupplier(''); setHtAmount(''); setHtReason('');
+    } catch (error: any) {
+      alert("Xatolik: " + error.message);
+    } finally {
+      setHtLoading(false);
+    }
+  };
+
   // Hamkorlar states
   const [editingSupplier, setEditingSupplier] = useState<string | null>(null);
   const [tempDays, setTempDays] = useState('');
@@ -251,7 +290,7 @@ export default function WarehousePage() {
 
   const fetchData = async () => {
     try {
-      if (['katalog', 'kirim', 'hamkorlar', 'spisaniya', 'qoldiq'].includes(activeTab)) {
+      if (['katalog', 'kirim', 'hamkorlar', 'spisaniya', 'qoldiq', 'hamkor_tolov'].includes(activeTab)) {
         const { data: catData, error: catErr } = await supabase.from('categories').select('*');
         if (catErr) setFetchError('Kategoriya xatosi: ' + catErr.message);
         else if (catData) setCategories(catData);
@@ -273,9 +312,16 @@ export default function WarehousePage() {
         }
       }
 
-      if (activeTab === 'tarix') {
+      if (activeTab === 'tarix' || activeTab === 'hamkor_tolov') {
         const { data: caData } = await supabase.from('cash_accounts').select('id, name, currency').eq('is_active', true).eq('is_virtual', false).order('sort_order');
-        if (caData) { setCashAccounts(caData); if (!payAccountId && caData[0]) setPayAccountId(caData[0].id); }
+        if (caData) {
+          setCashAccounts(caData);
+          if (activeTab === 'tarix' && !payAccountId && caData[0]) setPayAccountId(caData[0].id);
+          if (activeTab === 'hamkor_tolov' && !htAccountId && caData[0]) setHtAccountId(caData[0].id);
+        }
+      }
+
+      if (activeTab === 'tarix') {
 
         const { data } = await supabase
           .from('receipt_docs')
@@ -449,48 +495,26 @@ export default function WarehousePage() {
     if (receiptItems.length === 0) { alert("Xato: Hech qanday tovar qo'shilmagan!"); return; }
     setKirimLoading(true); setKirimSuccess('');
     try {
-      const totalAmountUsd = receiptItems.reduce((sum, item) => sum + item.total, 0);
-      const { data: supTerm } = await supabase.from('suppliers').select('payment_term_days').eq('id', selectedSupplier).single();
-      const termDays = supTerm?.payment_term_days || 0;
       // Muddat KIRIM SANASIDAN hisoblanadi (bugungi kundan emas) — aks holda
       // kechagi kirimni bugun kiritganda to'lov muddati bir kunga siljib ketardi.
       const receiptDate = new Date(kirimSana + 'T12:00:00');
-      let dueDate = null;
-      if (termDays > 0) {
-        const date = new Date(receiptDate); date.setDate(date.getDate() + termDays); dueDate = date.toISOString();
-      }
 
-      const { data: receipt, error: receiptError } = await supabase.from('receipt_docs')
-        .insert([{ supplier_id: selectedSupplier, total_amount: totalAmountUsd, document_date: receiptDate.toISOString(), due_date: dueDate }]).select().single();
-      if (receiptError) throw receiptError;
-      
-      for (const item of receiptItems) {
-        const { error: itemsError } = await supabase.from('receipt_items').insert([{
-          receipt_id: receipt.id, product_id: item.product_id, quantity: item.quantity, remaining_quantity: item.quantity, incoming_price: item.incoming_price
-        }]);
-        if (itemsError) throw itemsError;
-        
-        const { data: bal } = await supabase.from('inventory_balances').select('*').eq('product_id', item.product_id).single();
-        if (bal) {
-          const newQty = bal.quantity + item.quantity;
-          const newAvgPrice = ((bal.quantity * bal.average_price) + (item.quantity * item.incoming_price)) / newQty;
-          await supabase.from('inventory_balances').update({ quantity: newQty, average_price: newAvgPrice, updated_at: new Date() }).eq('product_id', item.product_id);
-        } else {
-          await supabase.from('inventory_balances').insert([{ product_id: item.product_id, quantity: item.quantity, average_price: item.incoming_price }]);
-        }
-        
-        await supabase.from('inventory_transactions').insert([{
-          product_id: item.product_id, transaction_type: 'kirim', quantity_change: item.quantity, price: item.incoming_price, reference_id: receipt.id
-        }]);
-      }
-      
-      const { data: sup } = await supabase.from('suppliers').select('balance').eq('id', selectedSupplier).single();
-      if (sup) {
-        await supabase.from('suppliers').update({ balance: Number(sup.balance) + totalAmountUsd }).eq('id', selectedSupplier);
-      }
+      // 2026-08-17: bitta atomik RPC'ga o'tkazildi (avval 5 ta alohida so'rov
+      // edi — internet uzilsa yarim ma'lumot qolib ketishi mumkin edi).
+      const { error } = await supabase.rpc('create_receipt_doc', {
+        p_supplier_id: selectedSupplier,
+        p_document_date: receiptDate.toISOString(),
+        p_items: receiptItems.map(item => ({
+          product_id: item.product_id,
+          quantity: item.quantity,
+          incoming_price: item.incoming_price,
+        })),
+      });
+      if (error) throw error;
+
       setKirimSuccess("Kirim hujjati saqlandi!"); setReceiptItems([]); setSelectedSupplier('');
       setKirimSana(new Date().toISOString().slice(0, 10));
-    } catch (error: any) { alert("Xatolik: " + error.message); } 
+    } catch (error: any) { alert("Xatolik: " + error.message); }
     finally { setKirimLoading(false); }
   };
 
@@ -648,18 +672,19 @@ export default function WarehousePage() {
       
       {/* TABS */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px', flexWrap: 'wrap' }}>
-        {['katalog', 'kirim', 'spisaniya', 'hamkorga_vozvrat', 'tarix', 'qoldiq', 'hamkorlar']
+        {['katalog', 'kirim', 'hamkor_tolov', 'spisaniya', 'hamkorga_vozvrat', 'tarix', 'qoldiq', 'hamkorlar']
           .filter(tab => !(userRole === 'skladchi' && (tab === 'spisaniya' || tab === 'hamkorga_vozvrat')))
           .map(tab => (
           <button key={tab} className={`btn ${activeTab === tab ? 'btn-primary' : ''}`} onClick={() => setActiveTab(tab)} style={{ background: activeTab === tab ? 'var(--primary)' : 'var(--surface)', color: activeTab === tab ? 'white' : 'var(--text-primary)', border: '1px solid var(--border)', textTransform: 'capitalize' }}>
              {tab === 'katalog' && <PackagePlus size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'kirim' && <FileText size={18} style={{ marginRight: '8px' }}/>}
+             {tab === 'hamkor_tolov' && <DollarSign size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'spisaniya' && <AlertTriangle size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'hamkorga_vozvrat' && <ArrowLeftRight size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'tarix' && <History size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'qoldiq' && <TrendingUp size={18} style={{ marginRight: '8px' }}/>}
              {tab === 'hamkorlar' && <Users size={18} style={{ marginRight: '8px' }}/>}
-             {tab === 'katalog' ? 'Tovar Baza (Katalog)' : tab === 'kirim' ? 'Kirim (Nakladnoy)' : tab === 'spisaniya' ? 'Hisobdan Chiqarish (Spisaniya)' : tab === 'hamkorga_vozvrat' ? 'Hamkorga Vozvrat' : tab === 'qoldiq' ? "Ombor Qoldig'i (Analitika)" : tab}
+             {tab === 'katalog' ? 'Tovar Baza (Katalog)' : tab === 'kirim' ? 'Kirim (Nakladnoy)' : tab === 'hamkor_tolov' ? "Hamkorga To'lov" : tab === 'spisaniya' ? 'Hisobdan Chiqarish (Spisaniya)' : tab === 'hamkorga_vozvrat' ? 'Hamkorga Vozvrat' : tab === 'qoldiq' ? "Ombor Qoldig'i (Analitika)" : tab}
           </button>
         ))}
       </div>
@@ -872,6 +897,64 @@ export default function WarehousePage() {
                </button>
              </div>
            )}
+         </div>
+      )}
+
+      {/* HAMKORGA TO'LOV TAB (2026-08-17) — sklad uchun sodda forma: pul CEO'dan
+          olinadi, shu yerda faqat hamkor+summa+hisob+kurs+sabab kiritiladi. */}
+      {activeTab === 'hamkor_tolov' && (
+         <div className="card">
+           <h2 style={{ marginBottom: 4, fontSize: '1.2rem' }}>Hamkorga To'lov</h2>
+           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 0, marginBottom: 16 }}>
+             Pulni CEO'dan olib, hamkorga berganingizdan so'ng shu yerga kiriting.
+           </p>
+           {htSuccess && <div style={{ padding: '12px', backgroundColor: '#dcfce7', color: '#166534', borderRadius: 8, marginBottom: 16 }}>{htSuccess}</div>}
+
+           <form onSubmit={handlePaySupplierSubmit} className="kirim-entry">
+             <div>
+               <label className="field-label">Hamkor</label>
+               <select className="input-field input-lg" value={htSupplier} onChange={e => setHtSupplier(e.target.value)}>
+                 <option value="">Tanlang...</option>
+                 {suppliers.map(sup => <option key={sup.id} value={sup.id}>{sup.name}</option>)}
+               </select>
+             </div>
+
+             <div>
+               <label className="field-label">Hisob</label>
+               <select className="input-field input-lg" value={htAccountId} onChange={e => setHtAccountId(e.target.value)}>
+                 <option value="">Tanlang...</option>
+                 {cashAccounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>)}
+               </select>
+             </div>
+
+             <div className="kirim-two-col">
+               <div>
+                 <label className="field-label">Summa {htSelectedAccount ? `(${htSelectedAccount.currency})` : ''}</label>
+                 <input type="number" inputMode="decimal" className="input-field input-lg" placeholder="0"
+                   value={htAmount} onChange={e => setHtAmount(e.target.value)} />
+               </div>
+               <div>
+                 <label className="field-label">Kurs</label>
+                 <input type="number" inputMode="decimal" className="input-field input-lg" placeholder="12100"
+                   value={htRate} onChange={e => setHtRate(e.target.value)} />
+               </div>
+             </div>
+             {htAmount && htRate && Number(htRate) > 0 && (
+               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                 ≈ ${(htSelectedAccount?.currency === 'USD' ? Number(htAmount) : Number(htAmount) / Number(htRate)).toFixed(2)} hamkor balansidan yechiladi
+               </div>
+             )}
+
+             <div>
+               <label className="field-label">Sabab {userRole === 'skladchi' ? '(majburiy)' : '(ixtiyoriy)'}</label>
+               <input type="text" className="input-field input-lg" placeholder="Masalan: tovar puli, naqd berildi"
+                 value={htReason} onChange={e => setHtReason(e.target.value)} />
+             </div>
+
+             <button type="submit" className="btn btn-primary kirim-confirm-btn" disabled={htLoading}>
+               {htLoading ? "Saqlanmoqda..." : "✓ To'lovni tasdiqlash"}
+             </button>
+           </form>
          </div>
       )}
 
