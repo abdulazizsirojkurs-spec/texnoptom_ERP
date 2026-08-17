@@ -2,10 +2,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
-import { Trash2, Camera, Plus } from 'lucide-react';
+import { Trash2, Camera } from 'lucide-react';
 import SkladHeader from '@/components/sklad/SkladHeader';
+import { COMPONENT_SLOTS, mapItemsToSlots, ComponentSlot, SlotAssignment } from '@/lib/componentSlots';
 
-type OrderItem = { id: string; product_id: string; product_name: string; quantity: number };
+type OrderItem = { id: string; category_name: string; product_id: string; product_name: string; quantity: number };
 type Order = {
   id: string; order_code: string; client_name: string; status: string; is_shipped: boolean;
   otgruzka_photo_url: string | null;
@@ -24,14 +25,11 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
 
   const [products, setProducts] = useState<any[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
-  const [newItemCategory, setNewItemCategory] = useState('');
-  const [newItemProductId, setNewItemProductId] = useState('');
-  const [newItemQty, setNewItemQty] = useState('1');
 
   const fetchOrder = async () => {
     const { data, error } = await supabase
       .from('sales_orders')
-      .select('id, order_code, client_name, status, is_shipped, otgruzka_photo_url, sales_order_items(id, product_id, product_name, quantity)')
+      .select('id, order_code, client_name, status, is_shipped, otgruzka_photo_url, sales_order_items(id, category_name, product_id, product_name, quantity)')
       .eq('id', orderId)
       .single();
     if (error) { alert('Xatolik: ' + error.message); router.push('/sklad/buyurtmalar'); return; }
@@ -68,61 +66,82 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
     }
   };
 
-  const handleItemDelete = async (itemId: string) => {
-    if (!confirm("Bu tovarni buyurtmadan o'chirasizmi?")) return;
+  // `boolean` qaytaradi — bekor qilinsa/rad etilsa `false`, shunda "tovarni
+  // almashtirish" oqimi yangisini qo'shishga o'tmaydi.
+  const handleItemDelete = async (itemId: string): Promise<boolean> => {
+    if (!confirm("Bu tovarni buyurtmadan o'chirasizmi?")) return false;
     const reason = prompt("Nima uchun bu tovarni o'chiryapsiz? (sabab yozish majburiy)");
-    if (!reason || !reason.trim()) return;
+    if (!reason || !reason.trim()) return false;
     setSavingItemId(itemId);
     try {
       const { error } = await supabase.rpc('sklad_delete_item', { p_item_id: itemId, p_reason: reason });
       if (error) throw error;
       await fetchOrder();
+      return true;
     } catch (err: any) {
       alert('Xatolik: ' + err.message);
+      return false;
     } finally {
       setSavingItemId(null);
     }
   };
 
-  const itemCategories = Array.from(new Set(products.map((p: any) => p.categories?.name).filter(Boolean)));
-  const filteredNewItemProducts = products.filter((p: any) => p.categories?.name === newItemCategory);
-
-  const handleAddItem = async () => {
-    if (!order || !newItemProductId || Number(newItemQty) < 1) return;
-    const product = products.find((p: any) => p.id === newItemProductId);
-    if (!product) return;
+  // Bo'sh slotga tovar qo'shadi (qty=1 bilan boshlanadi — keyin shu slotning
+  // o'z qatoridan o'zgartirish mumkin).
+  const handleAddItemToSlot = async (categoryForDb: string, productId: string): Promise<boolean> => {
+    if (!order) return false;
+    const product = products.find((p: any) => p.id === productId);
+    if (!product) return false;
 
     const stock = stockMap[product.id] ?? 0;
     if (stock <= 0) {
       alert(`"${product.name}" — hozir omborda yo'q bu tovardan.\n\nAvval omborga prixod (kirim) qiling, keyin buyurtmaga biriktira olasiz.`);
-      return;
-    }
-    if (Number(newItemQty) > stock) {
-      alert(`"${product.name}" — omborda faqat ${stock} dona bor, siz ${newItemQty} dona qo'shmoqchisiz.`);
-      return;
+      return false;
     }
 
-    if (!confirm(`"${product.name}" buyurtmaga qo'shiladi. Bu buyurtmadagidan BOSHQA/QO'SHIMCHA tovar — mijoz bilan kelishdingizmi?`)) return;
-    const addReason = prompt('Sabab yozing (masalan: mijoz bilan kelishildi, boshqa model bilan almashtirildi):');
-    if (!addReason || !addReason.trim()) return;
+    if (!confirm(`"${product.name}" buyurtmaga qo'shiladi — mijoz bilan kelishdingizmi?`)) return false;
+    const addReason = prompt('Sabab yozing (masalan: mijoz bilan kelishildi):');
+    if (!addReason || !addReason.trim()) return false;
 
     setSavingItemId('new');
     try {
       const { error } = await supabase.rpc('sklad_add_item', {
         p_order_id: order.id,
         p_product_id: product.id,
-        p_qty: Number(newItemQty),
-        p_category: newItemCategory,
+        p_qty: 1,
+        p_category: categoryForDb,
         p_reason: addReason,
       });
       if (error) throw error;
-      setNewItemCategory(''); setNewItemProductId(''); setNewItemQty('1');
       await fetchOrder();
+      return true;
     } catch (err: any) {
       alert('Xatolik: ' + err.message);
+      return false;
     } finally {
       setSavingItemId(null);
     }
+  };
+
+  // Bitta slot dropdown'i o'zgarganda: bo'sh slot -> qo'shish, to'lgan slot
+  // bo'shatilsa -> o'chirish, to'lgan slot boshqa tovarga almashtirilsa ->
+  // avval eskisi o'chiriladi (o'z tasdig'i bilan), muvaffaqiyatli bo'lsagina
+  // yangisi qo'shiladi.
+  const handleSlotProductChange = async (slot: ComponentSlot, existing: SlotAssignment | undefined, newProductId: string) => {
+    if (!newProductId) {
+      if (existing) await handleItemDelete(existing.id);
+      return;
+    }
+    const product = products.find((p: any) => p.id === newProductId);
+    if (!product) return;
+    const categoryForDb = slot.categoryName ?? product.categories?.name ?? 'Boshqa tovarlar';
+
+    if (existing) {
+      if (existing.product_id === newProductId) return;
+      const deleted = await handleItemDelete(existing.id);
+      if (!deleted) return;
+    }
+    await handleAddItemToSlot(categoryForDb, newProductId);
   };
 
   const handleOtgruzkaClick = () => {
@@ -168,6 +187,8 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
   }
 
   const readOnly = order.is_shipped;
+  const { bySlotKey, overflow } = mapItemsToSlots(order.sales_order_items || []);
+  const filledCount = Object.keys(bySlotKey).length + overflow.length;
 
   return (
     <div className="sklad-page">
@@ -181,42 +202,104 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
             </span>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 4, marginBottom: 16 }}>
-            Tovarlar ro'yxati {readOnly ? '' : '— soni/tovar tarkibini bu yerdan o\'zgartirasiz'}
+            Komplekt qismlari {readOnly ? '' : '— bo\'sh qatorlar hali tanlanmagan detallarni bildiradi'}
           </p>
 
-          {order.sales_order_items.length === 0 ? (
-            <div className="kirim-empty">Tovar yo'q</div>
-          ) : (
-            <div style={{ marginBottom: readOnly ? 0 : 8 }}>
-              {order.sales_order_items.map(it => (
-                <div key={it.id} className="kirim-item-row">
-                  <div className="kirim-item-info">
-                    <div className="kirim-item-name">{it.product_name}</div>
-                  </div>
-                  {readOnly ? (
+          {readOnly ? (
+            filledCount === 0 ? (
+              <div className="kirim-empty">Tovar yo'q</div>
+            ) : (
+              <div>
+                {COMPONENT_SLOTS.map(slot => {
+                  const existing = bySlotKey[slot.key];
+                  if (!existing) return null;
+                  return (
+                    <div key={slot.key} className="kirim-item-row">
+                      <div className="kirim-item-info">
+                        <div className="kirim-item-name">{existing.product_name}</div>
+                        <div className="kirim-item-sub">{slot.label}</div>
+                      </div>
+                      <div className="kirim-item-total">{existing.quantity} dona</div>
+                    </div>
+                  );
+                })}
+                {overflow.map(it => (
+                  <div key={it.id} className="kirim-item-row">
+                    <div className="kirim-item-info">
+                      <div className="kirim-item-name">{it.product_name}</div>
+                      <div className="kirim-item-sub">{it.category_name}</div>
+                    </div>
                     <div className="kirim-item-total">{it.quantity} dona</div>
-                  ) : (
-                    <>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            <div>
+              {COMPONENT_SLOTS.map(slot => {
+                const existing = bySlotKey[slot.key];
+                const isUnfiltered = slot.categoryName === null;
+                const categoryProducts = isUnfiltered
+                  ? products
+                  : products.filter((p: any) => p.categories?.name === slot.categoryName);
+                const busy = savingItemId === (existing?.id || 'new');
+                return (
+                  <div key={slot.key} className="kirim-item-row" style={{ gap: 8 }}>
+                    <div style={{ width: 76, fontSize: '0.75rem', fontWeight: 600, color: existing ? 'var(--primary)' : 'var(--text-secondary)', flexShrink: 0 }}>
+                      {slot.label}
+                    </div>
+                    <select
+                      className="input-field"
+                      style={{ flex: 1, fontSize: '0.85rem', padding: '6px 8px' }}
+                      value={existing?.product_id || ''}
+                      disabled={busy}
+                      onChange={e => handleSlotProductChange(slot, existing, e.target.value)}
+                    >
+                      <option value="">{isUnfiltered ? 'Tanlanmagan...' : `${slot.label} tanlang...`}</option>
+                      {categoryProducts.map((p: any) => {
+                        const stock = stockMap[p.id] ?? 0;
+                        return (
+                          <option key={p.id} value={p.id} disabled={stock <= 0 && p.id !== existing?.product_id}>
+                            {p.name}{stock > 0 ? ` — ${stock} dona` : " — omborda yo'q"}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {existing && (
                       <input
-                        type="number"
-                        inputMode="numeric"
-                        min={1}
-                        defaultValue={it.quantity}
-                        disabled={savingItemId === it.id}
-                        style={{ width: 60, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', textAlign: 'center' }}
+                        type="number" inputMode="numeric" min={1}
+                        defaultValue={existing.quantity}
+                        disabled={busy}
+                        style={{ width: 48, padding: '6px', borderRadius: 8, border: '1px solid var(--border)', textAlign: 'center', fontSize: '0.8rem', flexShrink: 0 }}
                         onBlur={(e) => {
                           const q = Number(e.target.value);
-                          if (q > 0 && q !== it.quantity) handleItemQtyChange(it.id, q);
-                          else e.target.value = String(it.quantity);
+                          if (q > 0 && q !== existing.quantity) handleItemQtyChange(existing.id, q);
+                          else e.target.value = String(existing.quantity);
                         }}
                       />
+                    )}
+                  </div>
+                );
+              })}
+
+              {overflow.length > 0 && (
+                <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 10, marginTop: 10 }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    Eski tovarlar (18 slotga sig'magan):
+                  </div>
+                  {overflow.map(it => (
+                    <div key={it.id} className="kirim-item-row">
+                      <div className="kirim-item-info">
+                        <div className="kirim-item-name">{it.product_name}</div>
+                        <div className="kirim-item-sub">{it.category_name}</div>
+                      </div>
                       <button className="kirim-item-del" onClick={() => handleItemDelete(it.id)} disabled={savingItemId === it.id} title="O'chirish">
                         <Trash2 size={16} />
                       </button>
-                    </>
-                  )}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
 
@@ -225,34 +308,6 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
               <div className="field-label">Otgruzka rasmi</div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={order.otgruzka_photo_url} alt="Otgruzka isboti" style={{ width: '100%', borderRadius: 10, marginTop: 6 }} />
-            </div>
-          )}
-
-          {!readOnly && (
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 4 }}>
-              <div className="field-label" style={{ marginBottom: 8 }}>+ Tovar qo'shish</div>
-              <div className="kirim-two-col" style={{ marginBottom: 10 }}>
-                <select className="input-field" value={newItemCategory} onChange={e => { setNewItemCategory(e.target.value); setNewItemProductId(''); }}>
-                  <option value="">Kategoriya...</option>
-                  {itemCategories.map((c: any) => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <select className="input-field" value={newItemProductId} onChange={e => setNewItemProductId(e.target.value)} disabled={!newItemCategory}>
-                  <option value="">Tovar...</option>
-                  {filteredNewItemProducts.map((p: any) => (
-                    <option key={p.id} value={p.id}>{p.name} (omborda: {stockMap[p.id] ?? 0})</option>
-                  ))}
-                </select>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="number" inputMode="numeric" className="input-field" placeholder="Soni"
-                  value={newItemQty} onChange={e => setNewItemQty(e.target.value)} style={{ width: 80 }}
-                />
-                <button className="btn btn-secondary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                  onClick={handleAddItem} disabled={!newItemProductId || savingItemId === 'new'}>
-                  <Plus size={16} /> Qo'shish
-                </button>
-              </div>
             </div>
           )}
         </div>
@@ -264,7 +319,7 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
               className="btn btn-primary kirim-confirm-btn"
               style={{ marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
               onClick={handleOtgruzkaClick}
-              disabled={shipping || order.sales_order_items.length === 0}
+              disabled={shipping || filledCount === 0}
             >
               <Camera size={18} /> {shipping ? 'Yuklanmoqda...' : 'Otgruzka (rasmga olib)'}
             </button>

@@ -7,13 +7,7 @@ import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { ChevronDown, Search } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
-
-const COMPONENT_CATEGORIES = [
-  'Ona plata', 'Pratsessor', 'Kuller', 'Video karta', 'Keys',
-  'Blok pitaniya', 'Operativ xotira', 'SSD', 'Monitor',
-  'Klaviatura', 'Sichqoncha', 'Kovrik', 'Naushnik',
-  "Qo'shimcha 1", "Qo'shimcha 2", "Qo'shimcha 3"
-];
+import { COMPONENT_SLOTS, mapItemsToSlots } from '@/lib/componentSlots';
 
 const SALES_CHANNELS = [
   'Naqd borganda', 'kelib ob ketti', 'Uzum Nasiya', 'Anor Nasiya', 
@@ -21,8 +15,15 @@ const SALES_CHANNELS = [
 ];
 
 const REQUIRES_CONTRACT = [
-  'Uzum Nasiya', 'Anor Nasiya', 'Paylater', 'Open Card', 
+  'Uzum Nasiya', 'Anor Nasiya', 'Paylater', 'Open Card',
   'Perechesleniya', 'Yarim nasiya yarim naqt'
+];
+
+const VILOYATLAR = [
+  "Toshkent shahri", "Toshkent viloyati", "Andijon viloyati", "Farg'ona viloyati",
+  "Namangan viloyati", "Sirdaryo viloyati", "Jizzax viloyati", "Samarqand viloyati",
+  "Qashqadaryo viloyati", "Surxondaryo viloyati", "Buxoro viloyati", "Navoiy viloyati",
+  "Xorazm viloyati", "Qoraqalpog'iston Respublikasi",
 ];
 
 const SearchableSelect = ({ options, value, onChange, placeholder }: any) => {
@@ -110,6 +111,20 @@ function SalesContent() {
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [viloyat, setViloyat] = useState('');
+  const [tuman, setTuman] = useState('');
+  const [mahalla, setMahalla] = useState('');
+
+  // Viloyat/tuman/mahalla to'ldirilganda, ular avtomatik yagona "Manzil"
+  // (client_address) qatoriga birlashtiriladi — bazada alohida ustun ochish
+  // shart emas. Eski (tahrirlanayotgan) buyurtmalarning manzili shu maydonlar
+  // to'ldirilmaguncha o'zgarmasdan qoladi.
+  useEffect(() => {
+    if (viloyat || tuman || mahalla) {
+      const parts = [viloyat, tuman ? `${tuman} tumani` : '', mahalla].filter(Boolean);
+      setAddress(parts.join(', '));
+    }
+  }, [viloyat, tuman, mahalla]);
   const [salesChannel, setSalesChannel] = useState('');
   const [contractNumber, setContractNumber] = useState('');
   const [priceUsd, setPriceUsd] = useState('');
@@ -118,6 +133,9 @@ function SalesContent() {
   const [products, setProducts] = useState<any[]>([]);
   const [costMap, setCostMap] = useState<Record<string, number>>({});
   const [selectedItems, setSelectedItems] = useState<Record<string, { product_id: string, product_name: string, quantity: number }>>({});
+  // 18 kanonik slotga sig'may qolgan eski tovarlar (masalan "Xeon"/"Monoblok") —
+  // tahrirlashda o'zgarishsiz saqlanib qoladi, faqat ma'lumot uchun ko'rsatiladi.
+  const [overflowItems, setOverflowItems] = useState<import('@/lib/componentSlots').ExistingOrderItem[]>([]);
   
   const [loading, setLoading] = useState(false);
   const [tgLoading, setTgLoading] = useState(false);
@@ -164,15 +182,16 @@ function SalesContent() {
 
           const { data: items } = await supabase.from('sales_order_items').select('*').eq('order_id', editOrderId);
           if (items) {
+            // Mavjud tovarlarni kanonik slotlarga taqsimlaydi — hech biri
+            // yo'qolib qolmasin deb, sig'may qolganlar `overflow`ga tushadi
+            // (masalan eski "Xeon"/"Qo'shimcha 3" kabi yozuvlar).
+            const { bySlotKey, overflow } = mapItemsToSlots(items as any);
             const loadedItems: any = {};
-            items.forEach(item => {
-              loadedItems[item.category_name] = {
-                product_id: item.product_id,
-                product_name: item.product_name,
-                quantity: item.quantity
-              };
+            Object.entries(bySlotKey).forEach(([slotKey, item]) => {
+              loadedItems[slotKey] = { product_id: item.product_id, product_name: item.product_name, quantity: item.quantity };
             });
             setSelectedItems(loadedItems);
+            setOverflowItems(overflow as any);
           }
         }
       } else {
@@ -188,10 +207,10 @@ function SalesContent() {
   const totalUzs = (Number(priceUsd) || 0) * (Number(exchangeRate) || 0);
   const sellerName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Sotuvchi';
 
-  const handleItemSelect = (category: string, productId: string) => {
+  const handleItemSelect = (slotKey: string, productId: string) => {
     if (!productId) {
       const newItems = { ...selectedItems };
-      delete newItems[category];
+      delete newItems[slotKey];
       setSelectedItems(newItems);
       return;
     }
@@ -199,14 +218,14 @@ function SalesContent() {
     if (product) {
       setSelectedItems(prev => ({
         ...prev,
-        [category]: { product_id: product.id, product_name: product.name, quantity: prev[category]?.quantity || 1 }
+        [slotKey]: { product_id: product.id, product_name: product.name, quantity: prev[slotKey]?.quantity || 1 }
       }));
     }
   };
 
-  const handleQuantityChange = (category: string, quantity: number) => {
+  const handleQuantityChange = (slotKey: string, quantity: number) => {
     if (quantity < 1) return;
-    setSelectedItems(prev => ({ ...prev, [category]: { ...prev[category], quantity } }));
+    setSelectedItems(prev => ({ ...prev, [slotKey]: { ...prev[slotKey], quantity } }));
   };
 
   const generatePDFBlob = async () => {
@@ -277,8 +296,16 @@ function SalesContent() {
     if (REQUIRES_CONTRACT.includes(salesChannel) && !contractNumber) {
       setErrorMsg(`${salesChannel} uchun shartnoma raqami majburiy!`); return;
     }
-    const itemsList = Object.entries(selectedItems).map(([cat, item]) => ({ category: cat, ...item }));
-    if (itemsList.length === 0) {
+    // Har bir slot uchun HAQIQIY category_name'ni aniqlaymiz: nomlangan
+    // slotlar uchun slot.categoryName, "Boshqa tovarlar" (filtrsiz) slotlar
+    // uchun esa tanlangan tovarning o'zining haqiqiy kategoriyasi — sintetik
+    // "Boshqa tovarlar" yorlig'i emas, DB'da hamon to'g'ri kategoriya turadi.
+    const itemsList = Object.entries(selectedItems).map(([slotKey, item]) => {
+      const slot = COMPONENT_SLOTS.find(s => s.key === slotKey);
+      const category = slot?.categoryName ?? products.find(p => p.id === item.product_id)?.categories?.name ?? 'Boshqa tovarlar';
+      return { category, ...item };
+    });
+    if (itemsList.length === 0 && overflowItems.length === 0) {
       setErrorMsg("Kamida 1 ta tovar tanlanishi kerak!"); return;
     }
 
@@ -330,6 +357,16 @@ function SalesContent() {
           product_id: item.product_id, product_name: item.product_name, quantity: item.quantity,
           unit_cost_usd: cost && cost > 0 ? cost : null,
         };
+      });
+      // Kanonik 18 slotga sig'may qolgan eski tovarlar (overflowItems) tahrirlashda
+      // o'chirilgan edi (yuqorida "eski tovarlarni o'chiramiz") — shu yerda
+      // o'zgarishsiz qayta kiritiladi, aks holda saqlashda yo'qolib qolar edi.
+      overflowItems.forEach(item => {
+        orderItemsToInsert.push({
+          order_id: currentOrderId, category_name: item.category_name,
+          product_id: item.product_id, product_name: item.product_name, quantity: item.quantity,
+          unit_cost_usd: (item as any).unit_cost_usd ?? null,
+        } as any);
       });
       const { error: itemsError } = await supabase.from('sales_order_items').insert(orderItemsToInsert);
       if (itemsError) throw itemsError;
@@ -425,57 +462,56 @@ function SalesContent() {
             <h3 style={{ fontSize: '1.1rem', color: '#334155', fontWeight: 600 }}>Komplekt qismlari (Tovarlar)</h3>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {COMPONENT_CATEGORIES.map(category => {
-                const isAdditional = category.startsWith("Qo'shimcha");
+              {COMPONENT_SLOTS.map(slot => {
+                const isUnfiltered = slot.categoryName === null;
 
-                let categoryProducts = isAdditional 
-                  ? products.map(p => ({ label: p.name, value: p.id }))
-                  : products.filter(p => {
-                      if (!p.categories?.name) return false;
-                      const dbCat = p.categories.name.toLowerCase();
-                      const uiCat = category.toLowerCase();
-                      
-                      if (uiCat === 'pratsessor' && dbCat.includes('protsessor')) return true;
-                      if (uiCat === 'video karta' && dbCat.includes('videokarta')) return true;
-                      if (uiCat === 'monitor' && dbCat.includes('monitor')) return true;
-                      if (uiCat === 'kuller' && dbCat.includes('kuler')) return true;
-                      if (uiCat === 'ssd' && dbCat.includes('ssd')) return true;
-                      
-                      if (['klaviatura', 'sichqoncha', 'kovrik', 'naushnik'].includes(uiCat) && dbCat.includes('aksessuar')) return true;
-                      
-                      return dbCat.includes(uiCat) || uiCat.includes(dbCat);
-                    }).map(p => ({ label: p.name, value: p.id }));
+                // Aniq (fuzzy emas) moslik — bo'sh kategoriya bo'sh ko'rinadi,
+                // "hammasini ko'rsatish" niqobi endi yo'q.
+                const categoryProducts = (isUnfiltered
+                  ? products
+                  : products.filter(p => p.categories?.name === slot.categoryName)
+                ).map(p => ({ label: p.name, value: p.id }));
 
-                if (categoryProducts.length === 0) {
-                  categoryProducts = products.map(p => ({ label: p.name, value: p.id }));
-                }
+                const isSelected = !!selectedItems[slot.key];
 
-                const isSelected = !!selectedItems[category];
-                
                 return (
-                  <div key={category} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <div key={slot.key} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                     <div style={{ width: '130px', fontSize: '0.9rem', fontWeight: 500, color: isSelected ? 'var(--primary)' : 'var(--text-secondary)' }}>
-                      {category}
+                      {slot.label}
                     </div>
-                    
-                    <SearchableSelect 
-                      options={categoryProducts} 
-                      value={selectedItems[category]?.product_id || ''} 
-                      onChange={(val: string) => handleItemSelect(category, val)}
-                      placeholder={isAdditional ? "Barcha tovarlardan qidirish..." : `${category} qidirish...`}
+
+                    <SearchableSelect
+                      options={categoryProducts}
+                      value={selectedItems[slot.key]?.product_id || ''}
+                      onChange={(val: string) => handleItemSelect(slot.key, val)}
+                      placeholder={isUnfiltered ? "Barcha tovarlardan qidirish..." : `${slot.label} qidirish...`}
                     />
 
                     {isSelected && (
-                      <input 
-                        type="number" min="1" 
-                        value={selectedItems[category].quantity} 
-                        onChange={e => handleQuantityChange(category, parseInt(e.target.value) || 1)}
+                      <input
+                        type="number" min="1"
+                        value={selectedItems[slot.key].quantity}
+                        onChange={e => handleQuantityChange(slot.key, parseInt(e.target.value) || 1)}
                         style={{ ...inputStyle, width: '70px', textAlign: 'center' }}
                       />
                     )}
                   </div>
                 );
               })}
+
+              {overflowItems.length > 0 && (
+                <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 12, marginTop: 4 }}>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    Eski tovarlar (kanonik 18 slotga sig'magan, o'zgarishsiz saqlanadi):
+                  </div>
+                  {overflowItems.map(item => (
+                    <div key={item.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ width: '130px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{item.category_name}</div>
+                      <div style={{ flex: 1, fontSize: '0.9rem' }}>{item.product_name} × {item.quantity}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0' }} />

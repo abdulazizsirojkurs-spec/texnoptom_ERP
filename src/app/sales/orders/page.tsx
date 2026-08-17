@@ -5,6 +5,7 @@ import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CheckCircle, Clock, Package, Edit, Truck, XCircle, RefreshCcw, Search, Calendar, User, Wallet, Bike, X, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { COMPONENT_SLOTS, mapItemsToSlots } from '@/lib/componentSlots';
 
 type CashAccount = { id: string; name: string; currency: string };
 
@@ -38,9 +39,6 @@ export default function SalesOrdersPage() {
   const [itemsSaving, setItemsSaving] = useState<string | null>(null); // saqlanayotgan item id (yoki 'new')
   const [products, setProducts] = useState<any[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, number>>({}); // product_id -> ombor qoldig'i
-  const [newItemCategory, setNewItemCategory] = useState('');
-  const [newItemProductId, setNewItemProductId] = useState('');
-  const [newItemQty, setNewItemQty] = useState('1');
 
   const isSkladchi = role === 'skladchi';
 
@@ -226,9 +224,6 @@ export default function SalesOrdersPage() {
   // ── Tovarlar ro'yxatini tahrirlash (ombor balansiga tegmaydi — faqat yozuvni tuzatadi) ──
   const openItemsModal = (order: any) => {
     setItemsOrder(order);
-    setNewItemCategory('');
-    setNewItemProductId('');
-    setNewItemQty('1');
   };
   const closeItemsModal = () => setItemsOrder(null);
 
@@ -262,12 +257,15 @@ export default function SalesOrdersPage() {
     }
   };
 
-  const handleItemDelete = async (itemId: string) => {
-    if (!confirm("Bu tovarni buyurtmadan o'chirasizmi?")) return;
+  // Endi `boolean` qaytaradi — o'chirish bekor qilinsa/rad etilsa `false`,
+  // shunda chaqiruvchi (masalan "tovarni almashtirish" oqimi) yangisini
+  // qo'shishga o'tmaydi.
+  const handleItemDelete = async (itemId: string): Promise<boolean> => {
+    if (!confirm("Bu tovarni buyurtmadan o'chirasizmi?")) return false;
     let reason: string | null = null;
     if (isSkladchi) {
       reason = prompt("Nima uchun bu tovarni o'chiryapsiz? (sabab yozish majburiy)");
-      if (!reason || !reason.trim()) return;
+      if (!reason || !reason.trim()) return false;
     }
     setItemsSaving(itemId);
     try {
@@ -276,54 +274,47 @@ export default function SalesOrdersPage() {
         : await supabase.from('sales_order_items').delete().eq('id', itemId);
       if (error) throw error;
       if (itemsOrder) await refreshItemsOrder(itemsOrder.id);
+      return true;
     } catch (err: any) {
       alert('Xatolik: ' + err.message);
+      return false;
     } finally {
       setItemsSaving(null);
     }
   };
 
-  const itemCategories = Array.from(new Set(products.map((p: any) => p.categories?.name).filter(Boolean)));
-  const filteredNewItemProducts = products.filter((p: any) => p.categories?.name === newItemCategory);
+  // Bo'sh slotga tovar qo'shadi. `categoryForDb` — shu slotning haqiqiy
+  // kategoriyasi ("Boshqa tovarlar" slotlari uchun tovarning o'z kategoriyasi,
+  // sales/page.tsx bilan bir xil qoida).
+  const handleAddItemToSlot = async (categoryForDb: string, productId: string): Promise<boolean> => {
+    if (!itemsOrder) return false;
+    const product = products.find((p: any) => p.id === productId);
+    if (!product) return false;
 
-  const handleAddItem = async () => {
-    if (!itemsOrder || !newItemProductId || Number(newItemQty) < 1) return;
-    const product = products.find((p: any) => p.id === newItemProductId);
-    if (!product) return;
-
-    // Skladchi faqat omborda mavjud (qoldig'i > 0) tovarni biriktira oladi.
     if (isSkladchi) {
       const stock = stockMap[product.id] ?? 0;
       if (stock <= 0) {
         alert(`"${product.name}" — hozir omborda yo'q bu tovardan.\n\nAvval omborga prixod (kirim) qiling, keyin buyurtmaga biriktira olasiz.`);
-        return;
-      }
-      if (Number(newItemQty) > stock) {
-        alert(`"${product.name}" — omborda faqat ${stock} dona bor, siz ${newItemQty} dona qo'shmoqchisiz.\n\nMiqdorni kamaytiring yoki avval omborga prixod qiling.`);
-        return;
+        return false;
       }
     }
 
-    // 2026-08-17: buyurtmadagidan boshqa/qo'shimcha tovar qo'shish jiddiy o'zgarish
-    // (masalan mijoz bilan kelishmasdan boshqa model bilan almashtirish xavfi) —
-    // shuning uchun alohida ogohlantirish + majburiy sabab (CEO'ga darhol xabar boradi).
     let addReason: string | null = null;
     if (isSkladchi) {
-      if (!confirm(`"${product.name}" buyurtmaga qo'shiladi. Bu buyurtmadagidan BOSHQA/QO'SHIMCHA tovar — mijoz bilan kelishdingizmi?`)) return;
-      addReason = prompt("Sabab yozing (masalan: mijoz bilan kelishildi, boshqa model bilan almashtirildi):");
-      if (!addReason || !addReason.trim()) return;
+      if (!confirm(`"${product.name}" buyurtmaga qo'shiladi — mijoz bilan kelishdingizmi?`)) return false;
+      addReason = prompt('Sabab yozing (masalan: mijoz bilan kelishildi):');
+      if (!addReason || !addReason.trim()) return false;
     }
 
     setItemsSaving('new');
     try {
       let error: any;
       if (isSkladchi) {
-        // Skladchi RLS orqali yoza olmaydi — xavfsiz RPC (tannarx serverda o'rnatiladi, stok qayta tekshiriladi).
         ({ error } = await supabase.rpc('sklad_add_item', {
           p_order_id: itemsOrder.id,
           p_product_id: product.id,
-          p_qty: Number(newItemQty),
-          p_category: newItemCategory,
+          p_qty: 1,
+          p_category: categoryForDb,
           p_reason: addReason,
         }));
       } else {
@@ -335,23 +326,47 @@ export default function SalesOrdersPage() {
         const unitCostUsd = bal?.average_price && Number(bal.average_price) > 0 ? Number(bal.average_price) : null;
         ({ error } = await supabase.from('sales_order_items').insert({
           order_id: itemsOrder.id,
-          category_name: newItemCategory,
+          category_name: categoryForDb,
           product_id: product.id,
           product_name: product.name,
-          quantity: Number(newItemQty),
+          quantity: 1,
           unit_cost_usd: unitCostUsd,
         }));
       }
       if (error) throw error;
-      setNewItemCategory('');
-      setNewItemProductId('');
-      setNewItemQty('1');
       await refreshItemsOrder(itemsOrder.id);
+      return true;
     } catch (err: any) {
       alert('Xatolik: ' + err.message);
+      return false;
     } finally {
       setItemsSaving(null);
     }
+  };
+
+  // Bitta slot dropdown'ida tanlov o'zgarganda: bo'sh slot -> qo'shish,
+  // to'lgan slot bo'shatilsa -> o'chirish, to'lgan slot boshqa tovarga
+  // almashtirilsa -> avval eskisi o'chiriladi (o'z tasdig'i bilan), muvaffaqiyatli
+  // bo'lsagina yangisi qo'shiladi.
+  const handleSlotProductChange = async (
+    slot: import('@/lib/componentSlots').ComponentSlot,
+    existingItem: import('@/lib/componentSlots').SlotAssignment | undefined,
+    newProductId: string
+  ) => {
+    if (!newProductId) {
+      if (existingItem) await handleItemDelete(existingItem.id);
+      return;
+    }
+    const product = products.find((p: any) => p.id === newProductId);
+    if (!product) return;
+    const categoryForDb = slot.categoryName ?? product.categories?.name ?? 'Boshqa tovarlar';
+
+    if (existingItem) {
+      if (existingItem.product_id === newProductId) return;
+      const deleted = await handleItemDelete(existingItem.id);
+      if (!deleted) return;
+    }
+    await handleAddItemToSlot(categoryForDb, newProductId);
   };
 
   const selectedModalAccount = cashAccounts.find(c => c.id === modalCashAccountId);
@@ -861,83 +876,96 @@ export default function SalesOrdersPage() {
               Diqqat: bu yerdagi o'zgartirish ombor qoldig'iga avtomatik ta'sir qilmaydi — faqat buyurtma yozuvini tuzatadi.
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-              {(itemsOrder.sales_order_items || []).length === 0 ? (
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Tovar yo'q.</div>
-              ) : (itemsOrder.sales_order_items || []).map((it: any) => (
-                <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#f8fafc', borderRadius: 6 }}>
-                  <div style={{ flex: 1, fontSize: '0.85rem' }}>
-                    <div style={{ fontWeight: 600 }}>{it.product_name}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{it.category_name}</div>
-                  </div>
-                  <input
-                    type="number"
-                    defaultValue={it.quantity}
-                    disabled={itemsSaving === it.id}
-                    onBlur={(e) => {
-                      const q = Number(e.target.value);
-                      if (q > 0 && q !== it.quantity) handleItemQtyChange(it.id, q);
-                    }}
-                    style={{ width: 56, padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', textAlign: 'center', fontSize: '0.85rem' }}
-                  />
-                  <button
-                    onClick={() => handleItemDelete(it.id)}
-                    disabled={itemsSaving === it.id}
-                    title="O'chirish"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8 }}>Yangi tovar qo'shish</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginBottom: 8 }}>
-                <select
-                  className="input-field"
-                  value={newItemCategory}
-                  onChange={e => { setNewItemCategory(e.target.value); setNewItemProductId(''); }}
-                >
-                  <option value="">Kategoriya tanlang...</option>
-                  {itemCategories.map((c: any) => <option key={c} value={c}>{c}</option>)}
-                </select>
-                {newItemCategory && (
-                  <select className="input-field" value={newItemProductId} onChange={e => setNewItemProductId(e.target.value)}>
-                    <option value="">Tovar tanlang...</option>
-                    {filteredNewItemProducts.map((p: any) => {
-                      const stock = stockMap[p.id] ?? 0;
-                      if (isSkladchi) {
-                        return (
-                          <option key={p.id} value={p.id} disabled={stock <= 0}>
-                            {p.name} — {stock > 0 ? `${stock} dona bor` : "omborda yo'q"}
-                          </option>
-                        );
-                      }
-                      return <option key={p.id} value={p.id}>{p.name}</option>;
+            {(() => {
+              const { bySlotKey, overflow } = mapItemsToSlots(itemsOrder.sales_order_items || []);
+              return (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                    {COMPONENT_SLOTS.map(slot => {
+                      const existing = bySlotKey[slot.key];
+                      const isUnfiltered = slot.categoryName === null;
+                      const categoryProducts = isUnfiltered
+                        ? products
+                        : products.filter((p: any) => p.categories?.name === slot.categoryName);
+                      const busy = itemsSaving === (existing?.id || 'new');
+                      return (
+                        <div key={slot.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 90, fontSize: '0.78rem', fontWeight: 600, color: existing ? 'var(--primary)' : 'var(--text-secondary)', flexShrink: 0 }}>
+                            {slot.label}
+                          </div>
+                          <select
+                            className="input-field"
+                            style={{ flex: 1, fontSize: '0.85rem', padding: '6px 8px' }}
+                            value={existing?.product_id || ''}
+                            disabled={busy}
+                            onChange={e => handleSlotProductChange(slot, existing, e.target.value)}
+                          >
+                            <option value="">{isUnfiltered ? 'Tanlanmagan...' : `${slot.label} tanlang...`}</option>
+                            {categoryProducts.map((p: any) => {
+                              const stock = stockMap[p.id] ?? 0;
+                              if (isSkladchi && !isUnfiltered) {
+                                return (
+                                  <option key={p.id} value={p.id} disabled={stock <= 0 && p.id !== existing?.product_id}>
+                                    {p.name}{stock > 0 ? ` — ${stock} dona` : " — omborda yo'q"}
+                                  </option>
+                                );
+                              }
+                              return <option key={p.id} value={p.id}>{p.name}</option>;
+                            })}
+                          </select>
+                          {existing && (
+                            <input
+                              type="number"
+                              defaultValue={existing.quantity}
+                              disabled={busy}
+                              onBlur={(e) => {
+                                const q = Number(e.target.value);
+                                if (q > 0 && q !== existing.quantity) handleItemQtyChange(existing.id, q);
+                              }}
+                              style={{ width: 48, padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', textAlign: 'center', fontSize: '0.8rem', flexShrink: 0 }}
+                            />
+                          )}
+                        </div>
+                      );
                     })}
-                  </select>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="number"
-                  value={newItemQty}
-                  onChange={e => setNewItemQty(e.target.value)}
-                  min={1}
-                  style={{ width: 70, padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', textAlign: 'center' }}
-                />
-                <button
-                  onClick={handleAddItem}
-                  disabled={!newItemProductId || itemsSaving === 'new'}
-                  className="btn btn-primary"
-                  style={{ flex: 1 }}
-                >
-                  {itemsSaving === 'new' ? 'Qo\'shilmoqda...' : "Qo'shish"}
-                </button>
-              </div>
-            </div>
+                  </div>
+
+                  {overflow.length > 0 && (
+                    <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 10, marginBottom: 16 }}>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
+                        Eski tovarlar (18 slotga sig'magan):
+                      </div>
+                      {overflow.map((it: any) => (
+                        <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#f8fafc', borderRadius: 6, marginBottom: 6 }}>
+                          <div style={{ flex: 1, fontSize: '0.82rem' }}>
+                            <div style={{ fontWeight: 600 }}>{it.product_name}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{it.category_name}</div>
+                          </div>
+                          <input
+                            type="number"
+                            defaultValue={it.quantity}
+                            disabled={itemsSaving === it.id}
+                            onBlur={(e) => {
+                              const q = Number(e.target.value);
+                              if (q > 0 && q !== it.quantity) handleItemQtyChange(it.id, q);
+                            }}
+                            style={{ width: 48, padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', textAlign: 'center', fontSize: '0.8rem' }}
+                          />
+                          <button
+                            onClick={() => handleItemDelete(it.id)}
+                            disabled={itemsSaving === it.id}
+                            title="O'chirish"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
