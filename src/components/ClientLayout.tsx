@@ -1,6 +1,6 @@
 'use client';
-import { ReactNode, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { ReactNode, useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { useAuth } from '@/context/AuthContext';
 
@@ -8,10 +8,20 @@ import { Menu } from 'lucide-react';
 
 export default function ClientLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { user, loading } = useAuth();
+  const router = useRouter();
+  const { user, role, loading } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
+
   const isLoginPage = pathname === '/login';
+  const isSkladRoute = pathname.startsWith('/sklad');
+
+  // Skladchi faqat /sklad bo'limini ko'radi — boshqa har qanday admin
+  // sahifasiga (qo'lda URL yozib bo'lsa ham) kirishga urinsa qaytariladi.
+  useEffect(() => {
+    if (!loading && user && role === 'skladchi' && !isSkladRoute && !isLoginPage) {
+      router.push('/sklad');
+    }
+  }, [loading, user, role, isSkladRoute, isLoginPage, router]);
 
   if (loading) {
     return (
@@ -29,10 +39,23 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
 
   // Sahifa himoyasi (Route Guard)
   if (!user && !isLoginPage) {
-    return null; 
+    return null;
   }
 
   if (isLoginPage) {
+    return <>{children}</>;
+  }
+
+  // Skladchi noto'g'ri sahifada bo'lsa, yuqoridagi effect uni /sklad'ga
+  // qaytarayotgan bo'ladi — shu oraliqda admin chrome'ini bir lahza ham
+  // ko'rsatmaslik uchun hech narsa render qilmaymiz.
+  if (role === 'skladchi' && !isSkladRoute) {
+    return null;
+  }
+
+  // /sklad bo'limi — o'zining alohida, minimal mobil interfeysi bor,
+  // admin sidebar/mobile-header umuman ko'rsatilmaydi.
+  if (isSkladRoute) {
     return <>{children}</>;
   }
 

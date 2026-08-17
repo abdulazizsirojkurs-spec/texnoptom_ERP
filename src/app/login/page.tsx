@@ -10,13 +10,13 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, role, loading: authLoading } = useAuth();
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.push('/warehouse');
+      router.push(role === 'skladchi' ? '/sklad' : '/warehouse');
     }
-  }, [user, authLoading, router]);
+  }, [user, role, authLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

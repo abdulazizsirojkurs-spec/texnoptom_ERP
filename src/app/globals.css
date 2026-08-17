@@ -534,3 +534,39 @@ input, select, textarea { font-family: inherit; }
 @media (min-width: 769px) {
   .kirim-entry { padding: 20px; }
 }
+
+/* ============================================================
+   /sklad — skladchi uchun alohida, minimal mobil interfeys
+   (admin sidebar/mobile-header'dan mustaqil, har doim ko'rinadigan)
+   ============================================================ */
+.sklad-page { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--background); }
+.sklad-header {
+  display: flex; align-items: center; gap: 4px;
+  padding: 14px 16px; background-color: var(--surface); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+}
+.sklad-body { padding: 16px; }
+.sklad-tile-grid { display: flex; flex-direction: column; gap: 14px; }
+.sklad-tile {
+  display: flex; align-items: center; gap: 14px;
+  padding: 22px 18px; border-radius: var(--radius-lg, 14px);
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 1.05rem; font-weight: 650; color: var(--gray-900);
+  box-shadow: var(--shadow-sm); cursor: pointer; text-align: left; width: 100%;
+}
+.sklad-tile:active { background: var(--gray-50); }
+.sklad-tile-icon {
+  width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-100); color: var(--accent-600);
+}
+.sklad-order-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 14px 16px; border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--surface); margin-bottom: 10px; width: 100%; text-align: left; cursor: pointer;
+}
+.sklad-status-pill {
+  font-size: 0.75rem; font-weight: 650; padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+}
+.sklad-status-pill.shipped { background: #dcfce7; color: #166534; }
+.sklad-status-pill.pending { background: #fef3c7; color: #92400e; }
