@@ -52,7 +52,7 @@ export default function SkladTolovPage() {
 
   return (
     <div className="sklad-page">
-      <SkladHeader title="Hamkorga to'lov" backHref="/sklad" />
+      <SkladHeader title="Hamkorga to'lov" backHref="/sklad" actionHref="/sklad/tolov/tarix" />
       <div className="sklad-body">
         <div className="card">
           <h2 style={{ marginBottom: 4, fontSize: '1.2rem' }}>Hamkorga To'lov</h2>

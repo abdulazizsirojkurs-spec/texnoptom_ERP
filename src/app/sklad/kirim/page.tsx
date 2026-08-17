@@ -71,7 +71,7 @@ export default function SkladKirimPage() {
 
   return (
     <div className="sklad-page">
-      <SkladHeader title="Tovar kirim" backHref="/sklad" />
+      <SkladHeader title="Tovar kirim" backHref="/sklad" actionHref="/sklad/kirim/tarix" />
       <div className="sklad-body">
         <div className="card">
           <h2 style={{ marginBottom: 4, fontSize: '1.2rem' }}>Yangi Kirim Hujjati</h2>

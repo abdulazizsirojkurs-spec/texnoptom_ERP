@@ -4,10 +4,10 @@ import { useAuth } from '@/context/AuthContext';
 import { PackagePlus, DollarSign, ClipboardList, Boxes, LogOut } from 'lucide-react';
 
 const TILES = [
-  { href: '/sklad/kirim', label: 'Tovar kirim qilish', icon: PackagePlus },
-  { href: '/sklad/tolov', label: "Hamkorga to'lov qilish", icon: DollarSign },
-  { href: '/sklad/buyurtmalar', label: 'Buyurtmalar', icon: ClipboardList },
-  { href: '/sklad/qoldiq', label: "Ombor qoldig'i", icon: Boxes },
+  { href: '/sklad/kirim', label: 'Tovar kirim qilish', icon: PackagePlus, color: 'c-blue' },
+  { href: '/sklad/tolov', label: "Hamkorga to'lov qilish", icon: DollarSign, color: 'c-green' },
+  { href: '/sklad/buyurtmalar', label: 'Buyurtmalar', icon: ClipboardList, color: 'c-amber' },
+  { href: '/sklad/qoldiq', label: "Ombor qoldig'i", icon: Boxes, color: 'c-violet' },
 ];
 
 export default function SkladDashboard() {
@@ -29,10 +29,10 @@ export default function SkladDashboard() {
 
       <div className="sklad-body">
         <div className="sklad-tile-grid">
-          {TILES.map(({ href, label, icon: Icon }) => (
-            <button key={href} className="sklad-tile" onClick={() => router.push(href)}>
-              <span className="sklad-tile-icon"><Icon size={22} /></span>
-              {label}
+          {TILES.map(({ href, label, icon: Icon, color }) => (
+            <button key={href} className={`sklad-tile ${color}`} onClick={() => router.push(href)}>
+              <span className="sklad-tile-icon"><Icon size={24} /></span>
+              <span className="sklad-tile-label">{label}</span>
             </button>
           ))}
         </div>

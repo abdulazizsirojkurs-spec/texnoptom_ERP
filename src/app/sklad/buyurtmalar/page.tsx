@@ -5,12 +5,15 @@ import { supabase } from '@/utils/supabase';
 import { ChevronRight } from 'lucide-react';
 import SkladHeader from '@/components/sklad/SkladHeader';
 
-// Diqqat: bu so'rov ataylab narx/to'lov/tannarx ustunlarini SO'RAMAYDI ham —
-// skladchi bularni ko'rmasligi kerak (faqat UI'da yashirish emas).
+// Diqqat: bu so'rov to'lov holati/tannarx (unit_cost_usd, is_paid) kabi
+// ustunlarni SO'RAMAYDI — skladchi bularni ko'rmasligi kerak. Umumiy sotuv
+// summasi (total_usd_price) esa CEO'ning aniq so'rovi bo'yicha ko'rsatiladi.
 type SkladOrder = {
   id: string;
   order_code: string;
   client_name: string;
+  client_address: string | null;
+  total_usd_price: number | null;
   status: string;
   is_shipped: boolean;
   created_at: string;
@@ -25,7 +28,7 @@ export default function SkladBuyurtmalarPage() {
   useEffect(() => {
     supabase
       .from('sales_orders')
-      .select('id, order_code, client_name, status, is_shipped, created_at, sales_order_items(id, product_name, quantity)')
+      .select('id, order_code, client_name, client_address, total_usd_price, status, is_shipped, created_at, sales_order_items(id, product_name, quantity)')
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
         if (data) setOrders(data as any);
@@ -44,17 +47,23 @@ export default function SkladBuyurtmalarPage() {
           <div className="kirim-empty">Buyurtma topilmadi</div>
         ) : (
           orders.map(o => (
-            <button key={o.id} className="sklad-order-row" onClick={() => router.push(`/sklad/buyurtmalar/${o.id}`)}>
+            <button key={o.id} className="sklad-order-row" style={{ alignItems: 'flex-start' }} onClick={() => router.push(`/sklad/buyurtmalar/${o.id}`)}>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontWeight: 650, fontSize: '0.95rem', color: 'var(--gray-900)' }}>{o.order_code}</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {o.client_name} · {o.sales_order_items?.length || 0} tovar
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 650, fontSize: '0.95rem', color: 'var(--gray-900)' }}>{o.order_code}</span>
+                  <span className={`sklad-status-pill ${o.is_shipped ? 'shipped' : 'pending'}`}>
+                    {o.is_shipped ? '✅ Otgruzka qilingan' : '⏳ Kutilmoqda'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {o.client_name}{o.client_address ? ` · ${o.client_address}` : ''}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  {new Date(o.created_at).toLocaleDateString('uz-UZ')}
+                  {o.total_usd_price ? ` · $${Number(o.total_usd_price).toLocaleString()}` : ''}
                 </div>
               </div>
-              <span className={`sklad-status-pill ${o.is_shipped ? 'shipped' : 'pending'}`}>
-                {o.is_shipped ? '✅ Otgruzka qilingan' : '⏳ Kutilmoqda'}
-              </span>
-              <ChevronRight size={18} color="var(--gray-400)" />
+              <ChevronRight size={18} color="var(--gray-400)" style={{ marginTop: 4, flexShrink: 0 }} />
             </button>
           ))
         )}
