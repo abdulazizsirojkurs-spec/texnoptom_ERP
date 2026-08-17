@@ -11,28 +11,50 @@ export type ComponentSlot = {
   key: string;
   label: string;
   categoryName: string | null;
+  group: string;
 };
 
+// Guruhlar — faqat vizual bo'lish uchun (moslikka ta'sir qilmaydi), 18 ta
+// bir xil qatorni tushunarli bo'laklarga ajratadi.
+export const SLOT_GROUPS = {
+  ASOSIY: "Tizim blok qismlari",
+  XOTIRA: "Xotira",
+  PERIFERIYA: 'Monitor va periferiya',
+  QOSHIMCHA: "Qo'shimcha",
+} as const;
+
 export const COMPONENT_SLOTS: ComponentSlot[] = [
-  { key: 'ona_plata', label: 'Ona plata', categoryName: 'Ona plata' },
-  { key: 'protsessor', label: 'Protsessor', categoryName: 'Protsessor' },
-  { key: 'kuller', label: 'Kuller', categoryName: 'Kuller' },
-  { key: 'video_karta', label: 'Video Karta', categoryName: 'Video karta' },
-  { key: 'keys', label: 'Keys', categoryName: 'Keys' },
-  { key: 'blok_pitaniya', label: 'Blok pitaniya', categoryName: 'Blok pitaniya' },
-  { key: 'operativ_xotira', label: 'Operativ xotira', categoryName: 'Operativ xotira' },
-  { key: 'ssd_hdd_1', label: 'SSD & HDD', categoryName: 'SSD & HDD' },
-  { key: 'ssd_hdd_2', label: 'SSD & HDD', categoryName: 'SSD & HDD' },
-  { key: 'monitor', label: 'Monitor', categoryName: 'Monitor' },
-  { key: 'klaviatura', label: 'Klaviatura', categoryName: 'Klavitura' },
-  { key: 'sichqoncha', label: 'Sichqoncha', categoryName: 'Sichqoncha' },
-  { key: 'naushnik', label: 'Naushnik', categoryName: 'Naushnik' },
-  { key: 'kovrik', label: 'Kovrik', categoryName: 'Kovrik' },
-  { key: 'aksessuar_1', label: 'Aksessuarlar', categoryName: 'Aksessuarlar' },
-  { key: 'aksessuar_2', label: 'Aksessuarlar', categoryName: 'Aksessuarlar' },
-  { key: 'boshqa_1', label: 'Boshqa tovarlar', categoryName: null },
-  { key: 'boshqa_2', label: 'Boshqa tovarlar', categoryName: null },
+  { key: 'ona_plata', label: 'Ona plata', categoryName: 'Ona plata', group: SLOT_GROUPS.ASOSIY },
+  { key: 'protsessor', label: 'Protsessor', categoryName: 'Protsessor', group: SLOT_GROUPS.ASOSIY },
+  { key: 'kuller', label: 'Kuller', categoryName: 'Kuller', group: SLOT_GROUPS.ASOSIY },
+  { key: 'video_karta', label: 'Video Karta', categoryName: 'Video karta', group: SLOT_GROUPS.ASOSIY },
+  { key: 'keys', label: 'Keys (korpus)', categoryName: 'Keys', group: SLOT_GROUPS.ASOSIY },
+  { key: 'blok_pitaniya', label: 'Blok pitaniya', categoryName: 'Blok pitaniya', group: SLOT_GROUPS.ASOSIY },
+  { key: 'operativ_xotira', label: 'Operativ xotira', categoryName: 'Operativ xotira', group: SLOT_GROUPS.XOTIRA },
+  { key: 'ssd_hdd_1', label: 'SSD & HDD #1', categoryName: 'SSD & HDD', group: SLOT_GROUPS.XOTIRA },
+  { key: 'ssd_hdd_2', label: 'SSD & HDD #2', categoryName: 'SSD & HDD', group: SLOT_GROUPS.XOTIRA },
+  { key: 'monitor', label: 'Monitor', categoryName: 'Monitor', group: SLOT_GROUPS.PERIFERIYA },
+  { key: 'klaviatura', label: 'Klaviatura', categoryName: 'Klavitura', group: SLOT_GROUPS.PERIFERIYA },
+  { key: 'sichqoncha', label: 'Sichqoncha', categoryName: 'Sichqoncha', group: SLOT_GROUPS.PERIFERIYA },
+  { key: 'naushnik', label: 'Naushnik', categoryName: 'Naushnik', group: SLOT_GROUPS.PERIFERIYA },
+  { key: 'kovrik', label: 'Kovrik', categoryName: 'Kovrik', group: SLOT_GROUPS.PERIFERIYA },
+  { key: 'aksessuar_1', label: 'Aksessuarlar #1', categoryName: 'Aksessuarlar', group: SLOT_GROUPS.QOSHIMCHA },
+  { key: 'aksessuar_2', label: 'Aksessuarlar #2', categoryName: 'Aksessuarlar', group: SLOT_GROUPS.QOSHIMCHA },
+  { key: 'boshqa_1', label: 'Boshqa tovarlar #1', categoryName: null, group: SLOT_GROUPS.QOSHIMCHA },
+  { key: 'boshqa_2', label: 'Boshqa tovarlar #2', categoryName: null, group: SLOT_GROUPS.QOSHIMCHA },
 ];
+
+// Slotlarni guruhlarga bo'lib qaytaradi — UI'da bo'lim sarlavhalari chizish
+// uchun (masalan "Tizim blok qismlari", "Xotira", ...).
+export function groupedSlots(): { group: string; slots: ComponentSlot[] }[] {
+  const groups: { group: string; slots: ComponentSlot[] }[] = [];
+  for (const slot of COMPONENT_SLOTS) {
+    const last = groups[groups.length - 1];
+    if (last && last.group === slot.group) last.slots.push(slot);
+    else groups.push({ group: slot.group, slots: [slot] });
+  }
+  return groups;
+}
 
 // Nomlangan (categoryName != null) slotlarning kategoriya nomlari to'plami —
 // tahrirlash oynalarida "bu yozuv kanonik 16 kategoriyaning biriga kiradimi"

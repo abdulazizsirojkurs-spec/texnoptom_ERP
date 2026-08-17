@@ -5,7 +5,9 @@ import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { CheckCircle, Clock, Package, Edit, Truck, XCircle, RefreshCcw, Search, Calendar, User, Wallet, Bike, X, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { COMPONENT_SLOTS, mapItemsToSlots } from '@/lib/componentSlots';
+import { groupedSlots, mapItemsToSlots } from '@/lib/componentSlots';
+import ComponentSlotRow from '@/components/ComponentSlotRow';
+import ComponentSlotProgress from '@/components/ComponentSlotProgress';
 
 type CashAccount = { id: string; name: string; currency: string };
 
@@ -878,63 +880,45 @@ export default function SalesOrdersPage() {
 
             {(() => {
               const { bySlotKey, overflow } = mapItemsToSlots(itemsOrder.sales_order_items || []);
+              const filledCount = Object.keys(bySlotKey).length + overflow.length;
               return (
                 <>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-                    {COMPONENT_SLOTS.map(slot => {
-                      const existing = bySlotKey[slot.key];
-                      const isUnfiltered = slot.categoryName === null;
-                      const categoryProducts = isUnfiltered
-                        ? products
-                        : products.filter((p: any) => p.categories?.name === slot.categoryName);
-                      const busy = itemsSaving === (existing?.id || 'new');
-                      return (
-                        <div key={slot.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 90, fontSize: '0.78rem', fontWeight: 600, color: existing ? 'var(--primary)' : 'var(--text-secondary)', flexShrink: 0 }}>
-                            {slot.label}
-                          </div>
-                          <select
-                            className="input-field"
-                            style={{ flex: 1, fontSize: '0.85rem', padding: '6px 8px' }}
-                            value={existing?.product_id || ''}
-                            disabled={busy}
-                            onChange={e => handleSlotProductChange(slot, existing, e.target.value)}
-                          >
-                            <option value="">{isUnfiltered ? 'Tanlanmagan...' : `${slot.label} tanlang...`}</option>
-                            {categoryProducts.map((p: any) => {
-                              const stock = stockMap[p.id] ?? 0;
-                              if (isSkladchi && !isUnfiltered) {
-                                return (
-                                  <option key={p.id} value={p.id} disabled={stock <= 0 && p.id !== existing?.product_id}>
-                                    {p.name}{stock > 0 ? ` — ${stock} dona` : " — omborda yo'q"}
-                                  </option>
-                                );
-                              }
-                              return <option key={p.id} value={p.id}>{p.name}</option>;
-                            })}
-                          </select>
-                          {existing && (
-                            <input
-                              type="number"
-                              defaultValue={existing.quantity}
+                  <ComponentSlotProgress filledCount={filledCount} />
+                  <div style={{ marginBottom: 16 }}>
+                    {groupedSlots().map(({ group, slots }) => (
+                      <div key={group}>
+                        <div className="slot-group-header">{group}</div>
+                        {slots.map(slot => {
+                          const existing = bySlotKey[slot.key];
+                          const isUnfiltered = slot.categoryName === null;
+                          const categoryProducts = isUnfiltered
+                            ? products
+                            : products.filter((p: any) => p.categories?.name === slot.categoryName);
+                          const busy = itemsSaving === (existing?.id || 'new');
+                          return (
+                            <ComponentSlotRow
+                              key={slot.key}
+                              slot={slot}
+                              value={existing?.product_id || ''}
+                              quantity={existing?.quantity || 1}
                               disabled={busy}
-                              onBlur={(e) => {
-                                const q = Number(e.target.value);
-                                if (q > 0 && q !== existing.quantity) handleItemQtyChange(existing.id, q);
-                              }}
-                              style={{ width: 48, padding: '6px', borderRadius: 6, border: '1px solid #cbd5e1', textAlign: 'center', fontSize: '0.8rem', flexShrink: 0 }}
+                              placeholder={isUnfiltered ? 'Tanlanmagan...' : `${slot.label} tanlang...`}
+                              options={categoryProducts.map((p: any) => ({
+                                id: p.id, name: p.name,
+                                stock: (isSkladchi && !isUnfiltered) ? (stockMap[p.id] ?? 0) : undefined,
+                              }))}
+                              onProductChange={val => handleSlotProductChange(slot, existing, val)}
+                              onQtyChange={existing ? (q => handleItemQtyChange(existing.id, q)) : undefined}
                             />
-                          )}
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    ))}
                   </div>
 
                   {overflow.length > 0 && (
                     <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 10, marginBottom: 16 }}>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
-                        Eski tovarlar (18 slotga sig'magan):
-                      </div>
+                      <div className="slot-group-header" style={{ marginTop: 0 }}>Eski tovarlar (18 slotga sig'magan)</div>
                       {overflow.map((it: any) => (
                         <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#f8fafc', borderRadius: 6, marginBottom: 6 }}>
                           <div style={{ flex: 1, fontSize: '0.82rem' }}>

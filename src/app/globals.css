@@ -584,3 +584,60 @@ input, select, textarea { font-family: inherit; }
 }
 .sklad-status-pill.shipped { background: #dcfce7; color: #166534; }
 .sklad-status-pill.pending { background: #fef3c7; color: #92400e; }
+
+/* ============================================================
+   Komplekt-slot qatorlari (ComponentSlotRow) — buyurtma yaratish/
+   tahrirlashning uchala joyida (sales/page.tsx, admin oynasi,
+   skladchi sahifasi) bir xil ko'rinish. Label va dropdown ustma-ust —
+   tovar nomi hech qachon kesilmaydi.
+   ============================================================ */
+.slot-group-header {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-secondary); margin: 20px 0 10px; padding-top: 14px; border-top: 1px solid var(--border);
+}
+.slot-group-header:first-child { margin-top: 2px; padding-top: 0; border-top: none; }
+
+.slot-progress {
+  display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 14px;
+}
+.slot-progress-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--gray-100, #f1f5f9); overflow: hidden; }
+.slot-progress-fill { height: 100%; background: var(--success-500, #22c55e); border-radius: 999px; transition: width 0.2s ease; }
+.slot-progress b { color: var(--gray-900); font-variant-numeric: tabular-nums; }
+
+.slot-row {
+  border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+  margin-bottom: 10px; background: var(--surface); transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.slot-row[data-filled="true"] { border-color: var(--accent-200, #c7d2fe); background: var(--accent-25, #f7f8ff); }
+
+.slot-row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.slot-row-label {
+  display: flex; align-items: center; gap: 7px; font-size: 0.78rem; font-weight: 650;
+  color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.02em;
+}
+.slot-row[data-filled="true"] .slot-row-label { color: var(--accent-700, #4338ca); }
+.slot-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--gray-300, #cbd5e1); flex-shrink: 0; background: transparent; }
+.slot-row[data-filled="true"] .slot-dot { background: var(--success-500, #22c55e); border-color: var(--success-500, #22c55e); }
+
+.slot-row-qty { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.slot-row-qty button {
+  width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--border); background: #fff;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--gray-700, #374151);
+}
+.slot-row-qty button:disabled { opacity: 0.5; cursor: default; }
+.slot-row-qty span { min-width: 16px; text-align: center; font-size: 0.85rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+.slot-row-select-wrap { position: relative; display: flex; }
+.slot-row-select {
+  width: 100%; padding: 10px 34px 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+  font-size: 0.9rem; background: #fff; color: var(--gray-900); appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+.slot-row-select:disabled { background-color: var(--gray-50, #f8fafc); color: var(--text-secondary); }
+.slot-row-clear {
+  position: absolute; right: 30px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border-radius: 50%; border: none; background: var(--gray-100, #f1f5f9);
+  color: var(--gray-500, #64748b); display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.slot-row-clear:disabled { opacity: 0.5; cursor: default; }

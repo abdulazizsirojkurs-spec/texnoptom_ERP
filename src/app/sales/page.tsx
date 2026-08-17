@@ -7,7 +7,9 @@ import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { ChevronDown, Search } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { COMPONENT_SLOTS, mapItemsToSlots } from '@/lib/componentSlots';
+import { COMPONENT_SLOTS, groupedSlots, mapItemsToSlots } from '@/lib/componentSlots';
+import ComponentSlotRow from '@/components/ComponentSlotRow';
+import ComponentSlotProgress from '@/components/ComponentSlotProgress';
 
 const SALES_CHANNELS = [
   'Naqd borganda', 'kelib ob ketti', 'Uzum Nasiya', 'Anor Nasiya', 
@@ -460,54 +462,44 @@ function SalesContent() {
             <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0' }} />
             
             <h3 style={{ fontSize: '1.1rem', color: '#334155', fontWeight: 600 }}>Komplekt qismlari (Tovarlar)</h3>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {COMPONENT_SLOTS.map(slot => {
-                const isUnfiltered = slot.categoryName === null;
+            <ComponentSlotProgress filledCount={Object.keys(selectedItems).length + overflowItems.length} />
 
-                // Aniq (fuzzy emas) moslik — bo'sh kategoriya bo'sh ko'rinadi,
-                // "hammasini ko'rsatish" niqobi endi yo'q.
-                const categoryProducts = (isUnfiltered
-                  ? products
-                  : products.filter(p => p.categories?.name === slot.categoryName)
-                ).map(p => ({ label: p.name, value: p.id }));
-
-                const isSelected = !!selectedItems[slot.key];
-
-                return (
-                  <div key={slot.key} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <div style={{ width: '130px', fontSize: '0.9rem', fontWeight: 500, color: isSelected ? 'var(--primary)' : 'var(--text-secondary)' }}>
-                      {slot.label}
-                    </div>
-
-                    <SearchableSelect
-                      options={categoryProducts}
-                      value={selectedItems[slot.key]?.product_id || ''}
-                      onChange={(val: string) => handleItemSelect(slot.key, val)}
-                      placeholder={isUnfiltered ? "Barcha tovarlardan qidirish..." : `${slot.label} qidirish...`}
-                    />
-
-                    {isSelected && (
-                      <input
-                        type="number" min="1"
-                        value={selectedItems[slot.key].quantity}
-                        onChange={e => handleQuantityChange(slot.key, parseInt(e.target.value) || 1)}
-                        style={{ ...inputStyle, width: '70px', textAlign: 'center' }}
+            <div style={{ maxWidth: 480 }}>
+              {groupedSlots().map(({ group, slots }) => (
+                <div key={group}>
+                  <div className="slot-group-header">{group}</div>
+                  {slots.map(slot => {
+                    const isUnfiltered = slot.categoryName === null;
+                    const categoryProducts = isUnfiltered
+                      ? products
+                      : products.filter(p => p.categories?.name === slot.categoryName);
+                    const current = selectedItems[slot.key];
+                    return (
+                      <ComponentSlotRow
+                        key={slot.key}
+                        slot={slot}
+                        value={current?.product_id || ''}
+                        quantity={current?.quantity || 1}
+                        placeholder={isUnfiltered ? 'Tanlanmagan...' : `${slot.label} tanlang...`}
+                        options={categoryProducts.map(p => ({ id: p.id, name: p.name }))}
+                        onProductChange={val => handleItemSelect(slot.key, val)}
+                        onQtyChange={q => handleQuantityChange(slot.key, q)}
                       />
-                    )}
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              ))}
 
               {overflowItems.length > 0 && (
-                <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 12, marginTop: 4 }}>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
-                    Eski tovarlar (kanonik 18 slotga sig'magan, o'zgarishsiz saqlanadi):
-                  </div>
+                <div>
+                  <div className="slot-group-header">Eski tovarlar (o'zgarishsiz saqlanadi)</div>
                   {overflowItems.map(item => (
-                    <div key={item.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: 8 }}>
-                      <div style={{ width: '130px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{item.category_name}</div>
-                      <div style={{ flex: 1, fontSize: '0.9rem' }}>{item.product_name} × {item.quantity}</div>
+                    <div key={item.id} className="kirim-item-row">
+                      <div className="kirim-item-info">
+                        <div className="kirim-item-name">{item.product_name}</div>
+                        <div className="kirim-item-sub">{item.category_name}</div>
+                      </div>
+                      <div className="kirim-item-total">{item.quantity} dona</div>
                     </div>
                   ))}
                 </div>

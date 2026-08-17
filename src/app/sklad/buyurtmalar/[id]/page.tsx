@@ -4,7 +4,9 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
 import { Trash2, Camera } from 'lucide-react';
 import SkladHeader from '@/components/sklad/SkladHeader';
-import { COMPONENT_SLOTS, mapItemsToSlots, ComponentSlot, SlotAssignment } from '@/lib/componentSlots';
+import { groupedSlots, mapItemsToSlots, ComponentSlot, SlotAssignment } from '@/lib/componentSlots';
+import ComponentSlotRow from '@/components/ComponentSlotRow';
+import ComponentSlotProgress from '@/components/ComponentSlotProgress';
 
 type OrderItem = { id: string; category_name: string; product_id: string; product_name: string; quantity: number };
 type Order = {
@@ -201,92 +203,85 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
               {readOnly ? '✅ Otgruzka qilingan' : '⏳ Kutilmoqda'}
             </span>
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 4, marginBottom: 16 }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 4, marginBottom: 10 }}>
             Komplekt qismlari {readOnly ? '' : '— bo\'sh qatorlar hali tanlanmagan detallarni bildiradi'}
           </p>
+          {!readOnly && <ComponentSlotProgress filledCount={filledCount} />}
 
           {readOnly ? (
             filledCount === 0 ? (
               <div className="kirim-empty">Tovar yo'q</div>
             ) : (
               <div>
-                {COMPONENT_SLOTS.map(slot => {
-                  const existing = bySlotKey[slot.key];
-                  if (!existing) return null;
+                {groupedSlots().map(({ group, slots }) => {
+                  const filledInGroup = slots.filter(s => bySlotKey[s.key]);
+                  if (filledInGroup.length === 0) return null;
                   return (
-                    <div key={slot.key} className="kirim-item-row">
-                      <div className="kirim-item-info">
-                        <div className="kirim-item-name">{existing.product_name}</div>
-                        <div className="kirim-item-sub">{slot.label}</div>
-                      </div>
-                      <div className="kirim-item-total">{existing.quantity} dona</div>
+                    <div key={group}>
+                      <div className="slot-group-header">{group}</div>
+                      {filledInGroup.map(slot => {
+                        const existing = bySlotKey[slot.key];
+                        return (
+                          <div key={slot.key} className="kirim-item-row">
+                            <div className="kirim-item-info">
+                              <div className="kirim-item-name">{existing.product_name}</div>
+                              <div className="kirim-item-sub">{slot.label}</div>
+                            </div>
+                            <div className="kirim-item-total">{existing.quantity} dona</div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
-                {overflow.map(it => (
-                  <div key={it.id} className="kirim-item-row">
-                    <div className="kirim-item-info">
-                      <div className="kirim-item-name">{it.product_name}</div>
-                      <div className="kirim-item-sub">{it.category_name}</div>
-                    </div>
-                    <div className="kirim-item-total">{it.quantity} dona</div>
+                {overflow.length > 0 && (
+                  <div>
+                    <div className="slot-group-header">Eski tovarlar</div>
+                    {overflow.map(it => (
+                      <div key={it.id} className="kirim-item-row">
+                        <div className="kirim-item-info">
+                          <div className="kirim-item-name">{it.product_name}</div>
+                          <div className="kirim-item-sub">{it.category_name}</div>
+                        </div>
+                        <div className="kirim-item-total">{it.quantity} dona</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             )
           ) : (
             <div>
-              {COMPONENT_SLOTS.map(slot => {
-                const existing = bySlotKey[slot.key];
-                const isUnfiltered = slot.categoryName === null;
-                const categoryProducts = isUnfiltered
-                  ? products
-                  : products.filter((p: any) => p.categories?.name === slot.categoryName);
-                const busy = savingItemId === (existing?.id || 'new');
-                return (
-                  <div key={slot.key} className="kirim-item-row" style={{ gap: 8 }}>
-                    <div style={{ width: 76, fontSize: '0.75rem', fontWeight: 600, color: existing ? 'var(--primary)' : 'var(--text-secondary)', flexShrink: 0 }}>
-                      {slot.label}
-                    </div>
-                    <select
-                      className="input-field"
-                      style={{ flex: 1, fontSize: '0.85rem', padding: '6px 8px' }}
-                      value={existing?.product_id || ''}
-                      disabled={busy}
-                      onChange={e => handleSlotProductChange(slot, existing, e.target.value)}
-                    >
-                      <option value="">{isUnfiltered ? 'Tanlanmagan...' : `${slot.label} tanlang...`}</option>
-                      {categoryProducts.map((p: any) => {
-                        const stock = stockMap[p.id] ?? 0;
-                        return (
-                          <option key={p.id} value={p.id} disabled={stock <= 0 && p.id !== existing?.product_id}>
-                            {p.name}{stock > 0 ? ` — ${stock} dona` : " — omborda yo'q"}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    {existing && (
-                      <input
-                        type="number" inputMode="numeric" min={1}
-                        defaultValue={existing.quantity}
+              {groupedSlots().map(({ group, slots }) => (
+                <div key={group}>
+                  <div className="slot-group-header">{group}</div>
+                  {slots.map(slot => {
+                    const existing = bySlotKey[slot.key];
+                    const isUnfiltered = slot.categoryName === null;
+                    const categoryProducts = isUnfiltered
+                      ? products
+                      : products.filter((p: any) => p.categories?.name === slot.categoryName);
+                    const busy = savingItemId === (existing?.id || 'new');
+                    return (
+                      <ComponentSlotRow
+                        key={slot.key}
+                        slot={slot}
+                        value={existing?.product_id || ''}
+                        quantity={existing?.quantity || 1}
                         disabled={busy}
-                        style={{ width: 48, padding: '6px', borderRadius: 8, border: '1px solid var(--border)', textAlign: 'center', fontSize: '0.8rem', flexShrink: 0 }}
-                        onBlur={(e) => {
-                          const q = Number(e.target.value);
-                          if (q > 0 && q !== existing.quantity) handleItemQtyChange(existing.id, q);
-                          else e.target.value = String(existing.quantity);
-                        }}
+                        placeholder={isUnfiltered ? 'Tanlanmagan...' : `${slot.label} tanlang...`}
+                        options={categoryProducts.map((p: any) => ({ id: p.id, name: p.name, stock: stockMap[p.id] ?? 0 }))}
+                        onProductChange={val => handleSlotProductChange(slot, existing, val)}
+                        onQtyChange={existing ? (q => handleItemQtyChange(existing.id, q)) : undefined}
                       />
-                    )}
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              ))}
 
               {overflow.length > 0 && (
-                <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 10, marginTop: 10 }}>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
-                    Eski tovarlar (18 slotga sig'magan):
-                  </div>
+                <div>
+                  <div className="slot-group-header">Eski tovarlar (18 slotga sig'magan)</div>
                   {overflow.map(it => (
                     <div key={it.id} className="kirim-item-row">
                       <div className="kirim-item-info">
