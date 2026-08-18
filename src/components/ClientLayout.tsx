@@ -14,6 +14,9 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
 
   const isLoginPage = pathname === '/login';
   const isSkladRoute = pathname.startsWith('/sklad');
+  // Krayin CRM'dagi "Avans/Buyurtma qabul qilindi" modalida iframe sifatida
+  // ochiladigan tor rejim — admin sidebar/mobile-header ko'rsatilmaydi.
+  const isEmbedRoute = pathname === '/sales/embed';
 
   // Skladchi faqat /sklad bo'limini ko'radi — boshqa har qanday admin
   // sahifasiga (qo'lda URL yozib bo'lsa ham) kirishga urinsa qaytariladi.
@@ -56,6 +59,11 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   // /sklad bo'limi — o'zining alohida, minimal mobil interfeysi bor,
   // admin sidebar/mobile-header umuman ko'rsatilmaydi.
   if (isSkladRoute) {
+    return <>{children}</>;
+  }
+
+  // Krayin'dan iframe ichida ochilgan buyurtma formasi — chrome'siz, faqat forma.
+  if (isEmbedRoute) {
     return <>{children}</>;
   }
 

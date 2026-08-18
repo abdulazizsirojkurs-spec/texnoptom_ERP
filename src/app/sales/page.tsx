@@ -6,7 +6,7 @@ import jsPDF from 'jspdf';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { ChevronDown, Search } from 'lucide-react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { COMPONENT_SLOTS, groupedSlots, mapItemsToSlots } from '@/lib/componentSlots';
 import ComponentSlotRow from '@/components/ComponentSlotRow';
 import ComponentSlotProgress from '@/components/ComponentSlotProgress';
@@ -104,12 +104,19 @@ const SearchableSelect = ({ options, value, onChange, placeholder }: any) => {
   );
 };
 
-function SalesContent() {
+export function SalesContent() {
   const { user, role } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const pathname = usePathname();
   const editOrderId = searchParams.get('edit');
-  
+  // Krayin CRM'ning "Avans/Buyurtma qabul qilindi" bosqich-modalidan iframe
+  // sifatida ochilganda — sidebar'siz, torroq bir-ustunli ko'rinish, va
+  // muvaffaqiyatli saqlagach parent oynaga (Krayin) xabar yuboriladi.
+  const isEmbed = pathname === '/sales/embed';
+  const leadPrefillName = searchParams.get('name') || '';
+  const leadPrefillPhone = searchParams.get('phone') || '';
+
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -205,6 +212,17 @@ function SalesContent() {
     }
     initData();
   }, [editOrderId, router]);
+
+  // Krayin'dan lead nomi/telefoni URL orqali kelgan bo'lsa, bir martalik
+  // oldindan to'ldirish (operator keyin o'zgartira oladi, qayta yozib
+  // qo'yilmaydi).
+  useEffect(() => {
+    if (isEmbed && !editOrderId) {
+      if (leadPrefillName) setCustomerName(leadPrefillName);
+      if (leadPrefillPhone) setPhone(leadPrefillPhone);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const totalUzs = (Number(priceUsd) || 0) * (Number(exchangeRate) || 0);
   const sellerName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Sotuvchi';
@@ -380,6 +398,18 @@ function SalesContent() {
         setSuccessMsg(`Buyurtma saqlandi! (${orderCode})`);
         setNextOrderCode(String(Number(nextOrderCode) + 1).padStart(3, '0'));
         // Yana bitta yangi kiritish uchun maydonlarni tozalash mumkin
+
+        // Krayin'ning "won" modalida iframe sifatida ochilgan bo'lsa, parent
+        // oynaga buyurtma yaratilgani haqida xabar beramiz — Krayin flash
+        // xabar ko'rsatadi. Aniq maqsadli origin bilan (xavfsizlik uchun).
+        if (isEmbed) {
+          try {
+            window.parent.postMessage(
+              { type: 'texno-order-created', orderCode, totalUsdPrice: Number(priceUsd) },
+              'https://texnocrm.duckdns.org'
+            );
+          } catch { /* parent yo'q bo'lsa (embed'siz ochilgan bo'lsa) — e'tiborsiz qoldiramiz */ }
+        }
       }
     } catch (err: any) {
       setErrorMsg("Xatolik: " + err.message);
@@ -422,10 +452,10 @@ function SalesContent() {
       {errorMsg && <div style={{ padding: '12px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px', fontWeight: 'bold' }}>{errorMsg}</div>}
       {successMsg && <div style={{ padding: '12px', background: '#dcfce7', color: '#15803d', borderRadius: '8px', marginBottom: '16px', fontWeight: 'bold' }}>{successMsg}</div>}
       
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '32px', alignItems: 'start' }}>
-        
+      <div style={{ display: 'grid', gridTemplateColumns: isEmbed ? '1fr' : '1fr 340px', gap: '32px', alignItems: 'start' }}>
+
         {/* Form Section */}
-        <div className="card" style={{ padding: '32px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
+        <div className="card" style={{ padding: isEmbed ? '18px' : '32px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
               <div>
