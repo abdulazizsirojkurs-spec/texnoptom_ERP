@@ -31,9 +31,9 @@ export default function ComponentSlotRow({
         </label>
         {filled && onQtyChange && (
           <div className="slot-row-qty">
-            <button type="button" disabled={disabled} onClick={() => onQtyChange(Math.max(1, quantity - 1))}><Minus size={13} /></button>
+            <button type="button" disabled={disabled} onClick={() => onQtyChange(Math.max(1, quantity - 1))}><Minus size={11} /></button>
             <span>{quantity}</span>
-            <button type="button" disabled={disabled} onClick={() => onQtyChange(quantity + 1)}><Plus size={13} /></button>
+            <button type="button" disabled={disabled} onClick={() => onQtyChange(quantity + 1)}><Plus size={11} /></button>
           </div>
         )}
       </div>
@@ -60,7 +60,7 @@ export default function ComponentSlotRow({
             aria-label="Tanlovni bekor qilish"
             title="Tanlovni bekor qilish"
           >
-            <X size={15} />
+            <X size={12} />
           </button>
         )}
       </div>
