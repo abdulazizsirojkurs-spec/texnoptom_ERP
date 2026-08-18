@@ -468,9 +468,28 @@ export function SalesContent() {
               </div>
             </div>
 
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <div>
+                <label style={labelStyle}>Viloyat *</label>
+                <select value={viloyat} onChange={e => setViloyat(e.target.value)} style={inputStyle}>
+                  <option value="">Tanlang...</option>
+                  {VILOYATLAR.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Tuman</label>
+                <input type="text" value={tuman} onChange={e => setTuman(e.target.value)} style={inputStyle} placeholder="Masalan: Chilonzor" />
+              </div>
+            </div>
+
             <div>
-              <label style={labelStyle}>Manzil *</label>
-              <input type="text" value={address} onChange={e => setAddress(e.target.value)} style={inputStyle} placeholder="Toshkent sh." />
+              <label style={labelStyle}>Mahalla / to'liq manzil *</label>
+              <input type="text" value={mahalla} onChange={e => setMahalla(e.target.value)} style={inputStyle} placeholder="Ko'cha, uy raqami va h.k." />
+              {!viloyat && !tuman && !mahalla && address && (
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                  Joriy manzil: {address}
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
