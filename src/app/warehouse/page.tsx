@@ -72,7 +72,6 @@ export default function WarehousePage() {
   const [htReason, setHtReason] = useState('');
   const [htLoading, setHtLoading] = useState(false);
   const [htSuccess, setHtSuccess] = useState('');
-  const htSelectedAccount = cashAccounts.find(c => c.id === htAccountId);
 
   const handlePaySupplierSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -278,6 +277,7 @@ export default function WarehousePage() {
   const [payHistory, setPayHistory] = useState<any[]>([]);
   const [payHistoryLoading, setPayHistoryLoading] = useState(false);
   const selectedPayAccount = cashAccounts.find(c => c.id === payAccountId);
+  const htSelectedAccount = cashAccounts.find(c => c.id === htAccountId);
 
   // Qoldiq (Balances) states
   const [balances, setBalances] = useState<any[]>([]);
