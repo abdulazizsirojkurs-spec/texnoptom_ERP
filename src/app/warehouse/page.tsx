@@ -599,7 +599,7 @@ export default function WarehousePage() {
       // FIFO — faqat OMBORDAGI MIQDORNI shu hamkorning o'z partiyasidan to'g'ri
       // ayirish uchun (qaysi kirim hujjatiga tegishli ekanini kuzatib borish).
       // Summaga (totalCost) bu ta'sir qilmaydi — u yuqorida foydalanuvchi kiritgan.
-      const { data: batches } = await supabase
+      const { data: batches, error: batchesError } = await supabase
         .from('receipt_items')
         .select('*, receipt_docs!inner(supplier_id)')
         .eq('product_id', vozvratProduct)
@@ -607,7 +607,18 @@ export default function WarehousePage() {
         .gt('remaining_quantity', 0)
         .order('created_at', { ascending: true });
 
-      if (!batches || batches.length === 0) { alert("Bu hamkordan shu tovar bo'yicha ochiq partiya topilmadi!"); setVozvratLoading(false); return; }
+      if (batchesError) {
+        // VAQTINCHALIK DIAGNOSTIKA (2026-08-24) — haqiqiy PostgREST xatosini
+        // yashirmasdan ko'rsatish uchun, keyin olib tashlanadi.
+        alert(`Partiya so'rovida xato: ${batchesError.message}\n\nproduct_id=${vozvratProduct}\nsupplier_id=${vozvratSupplier}`);
+        setVozvratLoading(false);
+        return;
+      }
+      if (!batches || batches.length === 0) {
+        alert(`Bu hamkordan shu tovar bo'yicha ochiq partiya topilmadi!\n\n(diagnostika: product_id=${vozvratProduct}, supplier_id=${vozvratSupplier})`);
+        setVozvratLoading(false);
+        return;
+      }
 
       let qtyToDeduct = Number(vozvratQty);
       for (const batch of batches) {
