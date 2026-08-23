@@ -200,10 +200,9 @@ export default function KassaPage() {
     if (txn?.supplier_id) {
       const usdImpact = getSupplierUsdImpact(txn);
       if (usdImpact > 0) {
-        const sup = suppliers.find(s => s.id === txn.supplier_id);
-        if (sup) {
-          await supabase.from('suppliers').update({ balance: Number(sup.balance) + usdImpact }).eq('id', txn.supplier_id);
-        }
+        // Atomik (nisbiy) o'zgartirish — sahifadagi eskirgan balansni yozib
+        // yubormaydi, shu sabab oradan o'tgan boshqa amallar yo'qolmaydi.
+        await supabase.rpc('adjust_supplier_balance', { p_supplier_id: txn.supplier_id, p_delta: usdImpact });
       }
     }
     fetchTransactions();
@@ -269,19 +268,18 @@ export default function KassaPage() {
         const oldSupplierId = orig?.supplier_id || null;
         const oldImpact = orig ? getSupplierUsdImpact(orig) : 0;
         const newImpact = supplierId && direction === 'expense' ? computedSupplierUsd : 0;
+        // Atomik (nisbiy) o'zgartirish — eskirgan sahifa qiymati yozilmaydi.
         if (oldSupplierId && oldSupplierId === supplierId) {
-          const sup = suppliers.find(s => s.id === supplierId);
-          if (sup) {
-            await supabase.from('suppliers').update({ balance: Number(sup.balance) + oldImpact - newImpact }).eq('id', supplierId);
+          const delta = oldImpact - newImpact;
+          if (delta !== 0) {
+            await supabase.rpc('adjust_supplier_balance', { p_supplier_id: supplierId, p_delta: delta });
           }
         } else {
           if (oldSupplierId && oldImpact > 0) {
-            const supOld = suppliers.find(s => s.id === oldSupplierId);
-            if (supOld) await supabase.from('suppliers').update({ balance: Number(supOld.balance) + oldImpact }).eq('id', oldSupplierId);
+            await supabase.rpc('adjust_supplier_balance', { p_supplier_id: oldSupplierId, p_delta: oldImpact });
           }
           if (supplierId && newImpact > 0) {
-            const supNew = suppliers.find(s => s.id === supplierId);
-            if (supNew) await supabase.from('suppliers').update({ balance: Number(supNew.balance) - newImpact }).eq('id', supplierId);
+            await supabase.rpc('adjust_supplier_balance', { p_supplier_id: supplierId, p_delta: -newImpact });
           }
         }
 
@@ -295,10 +293,9 @@ export default function KassaPage() {
         // computedSupplierUsd — to'lov summasidan (agar hisob so'mda bo'lsa, kurs
         // narxiga bo'lib) avtomatik hisoblangan, qo'lda xato kiritish xavfi yo'q.
         if (supplierId && direction === 'expense' && computedSupplierUsd > 0) {
-          const sup = suppliers.find(s => s.id === supplierId);
-          if (sup) {
-            await supabase.from('suppliers').update({ balance: Number(sup.balance) - computedSupplierUsd }).eq('id', supplierId);
-          }
+          // Atomik (nisbiy) — sahifa uzoq ochiq turgan bo'lsa ham, oradan
+          // o'tgan kirim/to'lovlar yo'qolmaydi.
+          await supabase.rpc('adjust_supplier_balance', { p_supplier_id: supplierId, p_delta: -computedSupplierUsd });
         }
 
         setFlash(direction === 'income' ? "Kirim saqlandi ✓" : "Chiqim saqlandi ✓");

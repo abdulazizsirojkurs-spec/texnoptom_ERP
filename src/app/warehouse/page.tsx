@@ -109,10 +109,7 @@ export default function WarehousePage() {
   const handleDeleteReceipt = async (receiptId: string, totalAmount: number, supplierId: string, items: any[]) => {
     if (!confirm("Rostdan ham bu hujjatni o'chirmoqchimisiz? Ombor qoldig'i orqaga qaytariladi!")) return;
     try {
-      const { data: sup } = await supabase.from('suppliers').select('balance').eq('id', supplierId).single();
-      if (sup) {
-        await supabase.from('suppliers').update({ balance: Number(sup.balance) - totalAmount }).eq('id', supplierId);
-      }
+      await supabase.rpc('adjust_supplier_balance', { p_supplier_id: supplierId, p_delta: -totalAmount });
       for (const item of items) {
         const { data: bal } = await supabase.from('inventory_balances').select('quantity').eq('product_id', item.product_id).single();
         if (bal) {
@@ -130,10 +127,7 @@ export default function WarehousePage() {
   const handleEditReceipt = async (doc: any) => {
     if (!confirm("Tahrirlash uchun eski hujjat bazadan o'chirilib, ma'lumotlari 'Yangi Kirim' oynasiga ko'chiriladi. Rozimisiz?")) return;
     try {
-      const { data: sup } = await supabase.from('suppliers').select('balance').eq('id', doc.supplier_id).single();
-      if (sup) {
-        await supabase.from('suppliers').update({ balance: Number(sup.balance) - doc.total_amount }).eq('id', doc.supplier_id);
-      }
+      await supabase.rpc('adjust_supplier_balance', { p_supplier_id: doc.supplier_id, p_delta: -doc.total_amount });
       for (const item of doc.receipt_items) {
         const { data: bal } = await supabase.from('inventory_balances').select('quantity').eq('product_id', item.product_id).single();
         if (bal) {
@@ -216,10 +210,7 @@ export default function WarehousePage() {
       const { error } = await supabase.from('cash_transactions').insert(payload);
       if (error) throw error;
 
-      const { data: sup } = await supabase.from('suppliers').select('balance').eq('id', payDoc.supplier_id).single();
-      if (sup) {
-        await supabase.from('suppliers').update({ balance: Number(sup.balance) - usdAmount }).eq('id', payDoc.supplier_id);
-      }
+      await supabase.rpc('adjust_supplier_balance', { p_supplier_id: payDoc.supplier_id, p_delta: -usdAmount });
 
       setPayUsdAmount('');
       fetchPayHistory(payDoc.id);
@@ -629,8 +620,9 @@ export default function WarehousePage() {
         price: totalCost / Number(vozvratQty), reference_id: ret?.id,
       }]);
 
-      const sup = suppliers.find((s: any) => s.id === vozvratSupplier);
-      if (sup) await supabase.from('suppliers').update({ balance: Number(sup.balance) - totalCost }).eq('id', vozvratSupplier);
+      // Atomik (nisbiy) o'zgartirish — sahifadagi eskirgan balansni yozib
+      // yubormaydi, shu sabab oradan o'tgan kirim/to'lovlar yo'qolmaydi.
+      await supabase.rpc('adjust_supplier_balance', { p_supplier_id: vozvratSupplier, p_delta: -totalCost });
 
       setVozvratSuccess(`Vozvrat qilindi! Hamkor balansidan $${totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ayirildi.`);
       setVozvratProduct(''); setVozvratQty(''); setVozvratSearchTerm(''); setVozvratReason(''); setVozvratCost(''); setVozvratFifoHint(null);
