@@ -525,7 +525,7 @@ export default function WarehousePage() {
       const { data: bal } = await supabase.from('inventory_balances').select('quantity').eq('product_id', spisProduct).single();
       if (!bal || bal.quantity < Number(spisQty)) { alert(`Yetersiz qoldiq! Mavjud: ${bal?.quantity || 0} ta`); setSpisLoading(false); return; }
 
-      const { data: batches } = await supabase.from('receipt_items').select('*').eq('product_id', spisProduct).gt('remaining_quantity', 0).order('created_at', { ascending: true });
+      const { data: batches } = await supabase.from('receipt_items').select('*, receipt_docs!inner(document_date)').eq('product_id', spisProduct).gt('remaining_quantity', 0).order('document_date', { foreignTable: 'receipt_docs', ascending: true });
       let qtyToDeduct = Number(spisQty);
       let totalCost = 0;
       
@@ -565,11 +565,11 @@ export default function WarehousePage() {
       }
       const { data: batches } = await supabase
         .from('receipt_items')
-        .select('remaining_quantity, incoming_price, receipt_docs!inner(supplier_id)')
+        .select('remaining_quantity, incoming_price, receipt_docs!inner(supplier_id, document_date)')
         .eq('product_id', vozvratProduct)
         .eq('receipt_docs.supplier_id', vozvratSupplier)
         .gt('remaining_quantity', 0)
-        .order('created_at', { ascending: true });
+        .order('document_date', { foreignTable: 'receipt_docs', ascending: true });
       if (cancelled) return;
       if (!batches || batches.length === 0) { setVozvratFifoHint(null); return; }
       let qty = Number(vozvratQty);
@@ -601,24 +601,14 @@ export default function WarehousePage() {
       // Summaga (totalCost) bu ta'sir qilmaydi — u yuqorida foydalanuvchi kiritgan.
       const { data: batches, error: batchesError } = await supabase
         .from('receipt_items')
-        .select('*, receipt_docs!inner(supplier_id)')
+        .select('*, receipt_docs!inner(supplier_id, document_date)')
         .eq('product_id', vozvratProduct)
         .eq('receipt_docs.supplier_id', vozvratSupplier)
         .gt('remaining_quantity', 0)
-        .order('created_at', { ascending: true });
+        .order('document_date', { foreignTable: 'receipt_docs', ascending: true });
 
-      if (batchesError) {
-        // VAQTINCHALIK DIAGNOSTIKA (2026-08-24) — haqiqiy PostgREST xatosini
-        // yashirmasdan ko'rsatish uchun, keyin olib tashlanadi.
-        alert(`Partiya so'rovida xato: ${batchesError.message}\n\nproduct_id=${vozvratProduct}\nsupplier_id=${vozvratSupplier}`);
-        setVozvratLoading(false);
-        return;
-      }
-      if (!batches || batches.length === 0) {
-        alert(`Bu hamkordan shu tovar bo'yicha ochiq partiya topilmadi!\n\n(diagnostika: product_id=${vozvratProduct}, supplier_id=${vozvratSupplier})`);
-        setVozvratLoading(false);
-        return;
-      }
+      if (batchesError) { alert("Partiya so'rovida xato: " + batchesError.message); setVozvratLoading(false); return; }
+      if (!batches || batches.length === 0) { alert("Bu hamkordan shu tovar bo'yicha ochiq partiya topilmadi!"); setVozvratLoading(false); return; }
 
       let qtyToDeduct = Number(vozvratQty);
       for (const batch of batches) {
