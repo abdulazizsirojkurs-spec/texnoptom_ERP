@@ -138,6 +138,8 @@ export function SalesContent() {
   const [contractNumber, setContractNumber] = useState('');
   const [priceUsd, setPriceUsd] = useState('');
   const [exchangeRate, setExchangeRate] = useState('');
+  const [deliveryUzs, setDeliveryUzs] = useState('');
+  const [advanceUzs, setAdvanceUzs] = useState('');
   
   const [products, setProducts] = useState<any[]>([]);
   const [costMap, setCostMap] = useState<Record<string, number>>({});
@@ -186,6 +188,8 @@ export function SalesContent() {
           setContractNumber(order.contract_number || '');
           setPriceUsd(order.total_usd_price.toString());
           setExchangeRate(order.exchange_rate.toString());
+          setDeliveryUzs(order.delivery_uzs ? order.delivery_uzs.toString() : '');
+          setAdvanceUzs(order.advance_uzs ? order.advance_uzs.toString() : '');
           setNextOrderCode(order.order_code.replace('TOG-', ''));
           setIsShipped(order.is_shipped);
 
@@ -225,6 +229,10 @@ export function SalesContent() {
   }, []);
 
   const totalUzs = (Number(priceUsd) || 0) * (Number(exchangeRate) || 0);
+  // Jami mijoz to'laydigan summa — tovar + dostavka (dostavka mijozdan olinadi, kompaniya xarajati emas).
+  const grandTotalUzs = totalUzs + (Number(deliveryUzs) || 0);
+  // Qoldiq to'lov — avans hali kassaga tasdiqlanmagan, faqat buyurtmada deklaratsiya sifatida saqlanadi.
+  const remainingUzs = grandTotalUzs - (Number(advanceUzs) || 0);
   const sellerName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Sotuvchi';
 
   const handleItemSelect = (slotKey: string, productId: string) => {
@@ -339,6 +347,7 @@ export function SalesContent() {
         const { error: updateError } = await supabase.from('sales_orders').update({
           client_name: customerName, client_phone: phone, client_address: address,
           total_usd_price: Number(priceUsd), exchange_rate: Number(exchangeRate), total_uzs_price: totalUzs,
+          delivery_uzs: Number(deliveryUzs) || 0, advance_uzs: Number(advanceUzs) || 0,
           sales_channel: salesChannel, contract_number: contractNumber || null
         }).eq('id', editOrderId);
         
@@ -351,6 +360,7 @@ export function SalesContent() {
         const { data: order, error: orderError } = await supabase.from('sales_orders').insert({
           order_code: orderCode, client_name: customerName, client_phone: phone, client_address: address,
           total_usd_price: Number(priceUsd), exchange_rate: Number(exchangeRate), total_uzs_price: totalUzs,
+          delivery_uzs: Number(deliveryUzs) || 0, advance_uzs: Number(advanceUzs) || 0,
           sales_channel: salesChannel, contract_number: contractNumber || null,
           seller_id: user?.id, seller_name: sellerName
         }).select().single();
@@ -571,6 +581,17 @@ export function SalesContent() {
               </div>
             </div>
 
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+              <div>
+                <label style={labelStyle}>Dostavka puli (so'm)</label>
+                <input type="number" value={deliveryUzs} onChange={e => setDeliveryUzs(e.target.value)} style={inputStyle} placeholder="Ixtiyoriy — kerak bo'lsa yozing" />
+              </div>
+              <div>
+                <label style={labelStyle}>Avans (so'm)</label>
+                <input type="number" value={advanceUzs} onChange={e => setAdvanceUzs(e.target.value)} style={inputStyle} placeholder="Ixtiyoriy — mijoz oldindan bergan bo'lsa" />
+              </div>
+            </div>
+
             <button onClick={handleSubmit} disabled={loading} className="btn btn-primary" style={{ padding: '16px', fontSize: '1.1rem', marginTop: '12px' }}>
               {loading ? 'Saqlanmoqda...' : (editOrderId ? 'O\'zgarishlarni Saqlash' : 'Buyurtmani Tasdiqlash va Saqlash')}
             </button>
@@ -669,10 +690,28 @@ export function SalesContent() {
                   <span style={{ fontWeight: 600 }}>Kurs</span>
                   <span>{exchangeRate || '0'} so'm</span>
                 </div>
+                {Number(deliveryUzs) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                    <span style={{ fontWeight: 600 }}>Dostavka</span>
+                    <span>{Number(deliveryUzs).toLocaleString('uz-UZ')} so'm</span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', marginTop: '2px', borderTop: '1px solid #d4d4d8' }}>
                   <span style={{ fontWeight: 800, fontSize: '0.8rem' }}>Jami To'lov</span>
-                  <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{totalUzs.toLocaleString('uz-UZ')}</span>
+                  <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{grandTotalUzs.toLocaleString('uz-UZ')}</span>
                 </div>
+                {Number(advanceUzs) > 0 && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                      <span style={{ fontWeight: 600, color: '#16a34a' }}>Avans</span>
+                      <span style={{ color: '#16a34a' }}>−{Number(advanceUzs).toLocaleString('uz-UZ')} so'm</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderTop: '1px dashed #d4d4d8' }}>
+                      <span style={{ fontWeight: 800 }}>Qoldiq to'lov</span>
+                      <span style={{ fontWeight: 800 }}>{remainingUzs.toLocaleString('uz-UZ')} so'm</span>
+                    </div>
+                  </>
+                )}
                 {contractNumber && (
                   <div style={{ color: '#ef4444', fontSize: '0.6rem', marginTop: '4px', textAlign: 'right' }}>
                     Shartnoma: {contractNumber}
