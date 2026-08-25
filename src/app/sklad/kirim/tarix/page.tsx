@@ -8,6 +8,8 @@ type ReceiptDoc = {
   document_date: string;
   total_amount: number;
   status: string;
+  created_at: string | null;
+  created_by_name: string | null;
   suppliers: { name: string } | null;
 };
 
@@ -18,7 +20,7 @@ export default function SkladKirimTarixPage() {
   useEffect(() => {
     supabase
       .from('receipt_docs')
-      .select('id, document_date, total_amount, status, suppliers(name)')
+      .select('id, document_date, total_amount, status, created_at, created_by_name, suppliers(name)')
       .order('document_date', { ascending: false })
       .limit(200)
       .then(({ data, error }) => {
@@ -42,6 +44,11 @@ export default function SkladKirimTarixPage() {
               <div className="kirim-item-info">
                 <div className="kirim-item-name">{d.suppliers?.name || '—'}</div>
                 <div className="kirim-item-sub">{new Date(d.document_date).toLocaleDateString('uz-UZ')}</div>
+                {d.created_at && (
+                  <div className="kirim-item-sub" style={{ opacity: 0.7 }}>
+                    {d.created_by_name || 'noma\'lum'} · {new Date(d.created_at).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
               </div>
               <div className="kirim-item-total">${Number(d.total_amount).toLocaleString()}</div>
             </div>

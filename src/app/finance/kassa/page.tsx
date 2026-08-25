@@ -96,7 +96,7 @@ export default function KassaPage() {
       // (Moliya -> P&L) ko'rinadi, chunki ular real pul harakati emas.
       let query = supabase
         .from('cash_transactions')
-        .select(`*, cash_accounts!inner(name, currency, is_virtual), chart_of_accounts(name), suppliers(name)`)
+        .select(`*, cash_accounts!inner(name, currency, is_virtual), chart_of_accounts(name), suppliers(name), profiles(full_name)`)
         .eq('cash_accounts.is_virtual', false)
         .order('txn_date', { ascending: false })
         .order('created_at', { ascending: false })
@@ -683,6 +683,7 @@ export default function KassaPage() {
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', backgroundColor: '#f8fafc' }}>
                 <th style={{ padding: '12px' }}>Sana</th>
+                <th style={{ padding: '12px' }}>Kim/Vaqt</th>
                 <th style={{ padding: '12px' }}>Hisob</th>
                 <th style={{ padding: '12px' }}>Toifa</th>
                 <th style={{ padding: '12px' }}>Izoh</th>
@@ -696,12 +697,22 @@ export default function KassaPage() {
             <tbody>
               {transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: '20px', textAlign: 'center' }}>Ma'lumot topilmadi.</td>
+                  <td colSpan={10} style={{ padding: '20px', textAlign: 'center' }}>Ma'lumot topilmadi.</td>
                 </tr>
               ) : (
                 transactions.map((t) => (
                   <tr key={t.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.95rem', background: editingId === t.id ? '#fffbeb' : 'transparent' }}>
                     <td style={{ padding: '12px' }}>{new Date(t.txn_date).toLocaleDateString('uz-UZ')}</td>
+                    <td style={{ padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>
+                      {t.created_by ? (
+                        <>
+                          {t.profiles?.full_name || 'noma\'lum'}<br />
+                          {t.created_at && new Date(t.created_at).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </>
+                      ) : (
+                        <span style={{ color: '#94a3b8' }}>Avtomatik</span>
+                      )}
+                    </td>
                     <td style={{ padding: '12px' }}>{t.cash_accounts?.name}</td>
                     <td style={{ padding: '12px' }}>{Array.isArray(t.chart_of_accounts) ? t.chart_of_accounts[0]?.name : (t.chart_of_accounts as any)?.name}</td>
                     <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{t.comment || t.suppliers?.name || t.customer_name || '-'}</td>

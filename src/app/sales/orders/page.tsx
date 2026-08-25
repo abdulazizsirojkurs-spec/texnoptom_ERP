@@ -636,10 +636,15 @@ export default function SalesOrdersPage() {
                       );
                     })()}
                     <td style={{ padding: '16px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      {new Date(order.created_at).toLocaleDateString('uz-UZ')}
+                      {new Date(order.created_at).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td style={{ padding: '16px' }}>
                       {getStatusBadge(order.status, order.is_shipped)}
+                      {order.is_shipped && order.shipped_at && (
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 4 }}>
+                          🚚 {order.shipped_by_name || 'noma\'lum'} · {new Date(order.shipped_at).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '16px' }}>
                       {getPaymentBadge(order)}

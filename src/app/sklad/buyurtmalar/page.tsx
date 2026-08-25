@@ -17,6 +17,8 @@ type SkladOrder = {
   status: string;
   is_shipped: boolean;
   created_at: string;
+  shipped_by_name: string | null;
+  shipped_at: string | null;
   sales_order_items: { id: string; product_name: string; quantity: number }[];
 };
 
@@ -28,7 +30,7 @@ export default function SkladBuyurtmalarPage() {
   useEffect(() => {
     supabase
       .from('sales_orders')
-      .select('id, order_code, client_name, client_address, total_usd_price, status, is_shipped, created_at, sales_order_items(id, product_name, quantity)')
+      .select('id, order_code, client_name, client_address, total_usd_price, status, is_shipped, created_at, shipped_by_name, shipped_at, sales_order_items(id, product_name, quantity)')
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
         if (data) setOrders(data as any);
@@ -62,6 +64,11 @@ export default function SkladBuyurtmalarPage() {
                   {new Date(o.created_at).toLocaleDateString('uz-UZ')}
                   {o.total_usd_price ? ` · $${Number(o.total_usd_price).toLocaleString()}` : ''}
                 </div>
+                {o.is_shipped && o.shipped_at && (
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 2 }}>
+                    🚚 {o.shipped_by_name || 'noma\'lum'} · {new Date(o.shipped_at).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
               </div>
               <ChevronRight size={18} color="var(--gray-400)" style={{ marginTop: 4, flexShrink: 0 }} />
             </button>
