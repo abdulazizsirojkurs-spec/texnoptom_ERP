@@ -7,6 +7,7 @@ import SkladHeader from '@/components/sklad/SkladHeader';
 import { groupedSlots, mapItemsToSlots, ComponentSlot, SlotAssignment } from '@/lib/componentSlots';
 import ComponentSlotRow from '@/components/ComponentSlotRow';
 import ComponentSlotProgress from '@/components/ComponentSlotProgress';
+import CashDeclareModal from '@/components/sklad/CashDeclareModal';
 
 type OrderItem = { id: string; category_name: string; product_id: string; product_name: string; quantity: number };
 type Order = {
@@ -18,13 +19,14 @@ type Order = {
 type CashPending = {
   id: string;
   type: 'customer_payment' | 'delivery_expense';
-  declared_amount_uzs: number;
-  confirmed_amount_uzs: number | null;
+  declared_amount: number;
+  confirmed_amount: number | null;
   status: 'pending' | 'confirmed' | 'cancelled' | 'rejected';
   note: string | null;
   declared_by_name: string | null;
   declared_at: string;
   resolution_reason: string | null;
+  cash_accounts: { name: string; currency: string } | null;
 };
 
 const CASH_STATUS_LABEL: Record<CashPending['status'], string> = {
@@ -48,12 +50,12 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
 
   const [cashPending, setCashPending] = useState<CashPending[]>([]);
-  const [declaringCash, setDeclaringCash] = useState<'customer_payment' | 'delivery_expense' | null>(null);
+  const [cashModalType, setCashModalType] = useState<'customer_payment' | 'delivery_expense' | null>(null);
 
   const fetchCashPending = async () => {
     const { data } = await supabase
       .from('sklad_cash_pending')
-      .select('id, type, declared_amount_uzs, confirmed_amount_uzs, status, note, declared_by_name, declared_at, resolution_reason')
+      .select('id, type, declared_amount, confirmed_amount, status, note, declared_by_name, declared_at, resolution_reason, cash_accounts(name, currency)')
       .eq('order_id', orderId)
       .order('declared_at', { ascending: false });
     if (data) setCashPending(data as any);
@@ -176,30 +178,6 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
       if (!deleted) return;
     }
     await handleAddItemToSlot(categoryForDb, newProductId);
-  };
-
-  const handleDeclareCash = async (type: 'customer_payment' | 'delivery_expense') => {
-    if (!order) return;
-    const label = type === 'customer_payment' ? 'Mijozdan qabul qilingan summa' : "Dostavka uchun to'langan summa";
-    const amountStr = prompt(`${label} (so'mda, faqat raqam):`);
-    if (!amountStr) return;
-    const amount = Number(amountStr.replace(/[^0-9]/g, ''));
-    if (!amount || amount <= 0) { alert("Summa noto'g'ri kiritildi."); return; }
-    const note = prompt('Izoh (ixtiyoriy):') || undefined;
-
-    setDeclaringCash(type);
-    try {
-      const { error } = await supabase.rpc('sklad_declare_cash', {
-        p_order_id: order.id, p_type: type, p_amount_uzs: amount, p_note: note,
-      });
-      if (error) throw error;
-      alert("Yuborildi — Abdulaziz tasdiqlagach kassaga tushadi.");
-      await fetchCashPending();
-    } catch (err: any) {
-      alert('Xatolik: ' + err.message);
-    } finally {
-      setDeclaringCash(null);
-    }
   };
 
   const handleCancelCashPending = async (id: string) => {
@@ -390,10 +368,10 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
                       {cp.type === 'customer_payment' ? '💰 Mijozdan qabul qilindi' : '🚚 Dostavka puli'}
                     </div>
                     <div className="kirim-item-sub">
-                      {CASH_STATUS_LABEL[cp.status]}
+                      {cp.cash_accounts?.name} · {CASH_STATUS_LABEL[cp.status]}
                       {cp.note ? ` · ${cp.note}` : ''}
-                      {cp.status === 'confirmed' && cp.confirmed_amount_uzs != null && Number(cp.confirmed_amount_uzs) !== Number(cp.declared_amount_uzs)
-                        ? ` · tasdiqlangan: ${Number(cp.confirmed_amount_uzs).toLocaleString('uz-UZ')} so'm`
+                      {cp.status === 'confirmed' && cp.confirmed_amount != null && Number(cp.confirmed_amount) !== Number(cp.declared_amount)
+                        ? ` · tasdiqlangan: ${Number(cp.confirmed_amount).toLocaleString('uz-UZ')} ${cp.cash_accounts?.currency}`
                         : ''}
                       {cp.status === 'cancelled' || cp.status === 'rejected'
                         ? (cp.resolution_reason ? ` · ${cp.resolution_reason}` : '')
@@ -401,7 +379,7 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div className="kirim-item-total">{Number(cp.declared_amount_uzs).toLocaleString('uz-UZ')} so'm</div>
+                    <div className="kirim-item-total">{Number(cp.declared_amount).toLocaleString('uz-UZ')} {cp.cash_accounts?.currency}</div>
                     {cp.status === 'pending' && (
                       <button className="kirim-item-del" onClick={() => handleCancelCashPending(cp.id)} title="Bekor qilish">
                         <Trash2 size={16} />
@@ -417,21 +395,28 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
             <button
               className="btn"
               style={{ flex: 1, minWidth: 160, background: '#ecfdf5', border: '1px solid #6ee7b7', color: '#047857', fontWeight: 600 }}
-              onClick={() => handleDeclareCash('customer_payment')}
-              disabled={declaringCash !== null}
+              onClick={() => setCashModalType('customer_payment')}
             >
               💰 Pul qabul qildim
             </button>
             <button
               className="btn"
               style={{ flex: 1, minWidth: 160, background: '#fff7ed', border: '1px solid #fdba74', color: '#c2410c', fontWeight: 600 }}
-              onClick={() => handleDeclareCash('delivery_expense')}
-              disabled={declaringCash !== null}
+              onClick={() => setCashModalType('delivery_expense')}
             >
               🚚 Dostavka puli
             </button>
           </div>
         </div>
+
+        {cashModalType && (
+          <CashDeclareModal
+            orderId={order.id}
+            type={cashModalType}
+            onClose={() => setCashModalType(null)}
+            onDeclared={fetchCashPending}
+          />
+        )}
 
         {!readOnly && (
           <>
