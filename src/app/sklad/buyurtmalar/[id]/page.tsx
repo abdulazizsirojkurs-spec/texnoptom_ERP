@@ -15,6 +15,25 @@ type Order = {
   sales_order_items: OrderItem[];
 };
 
+type CashPending = {
+  id: string;
+  type: 'customer_payment' | 'delivery_expense';
+  declared_amount_uzs: number;
+  confirmed_amount_uzs: number | null;
+  status: 'pending' | 'confirmed' | 'cancelled' | 'rejected';
+  note: string | null;
+  declared_by_name: string | null;
+  declared_at: string;
+  resolution_reason: string | null;
+};
+
+const CASH_STATUS_LABEL: Record<CashPending['status'], string> = {
+  pending: '⏳ Kutilmoqda',
+  confirmed: '✅ Tasdiqlandi',
+  cancelled: '❌ Bekor qilindi',
+  rejected: '🚫 Rad etildi',
+};
+
 export default function SkladOrderDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const orderId = params.id;
@@ -27,6 +46,18 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
 
   const [products, setProducts] = useState<any[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
+
+  const [cashPending, setCashPending] = useState<CashPending[]>([]);
+  const [declaringCash, setDeclaringCash] = useState<'customer_payment' | 'delivery_expense' | null>(null);
+
+  const fetchCashPending = async () => {
+    const { data } = await supabase
+      .from('sklad_cash_pending')
+      .select('id, type, declared_amount_uzs, confirmed_amount_uzs, status, note, declared_by_name, declared_at, resolution_reason')
+      .eq('order_id', orderId)
+      .order('declared_at', { ascending: false });
+    if (data) setCashPending(data as any);
+  };
 
   const fetchOrder = async () => {
     const { data, error } = await supabase
@@ -41,6 +72,7 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
 
   useEffect(() => {
     fetchOrder();
+    fetchCashPending();
     supabase.from('products').select('*, categories(name)').then(({ data }) => { if (data) setProducts(data); });
     supabase.from('inventory_balances').select('product_id, quantity').then(({ data }) => {
       if (data) {
@@ -144,6 +176,42 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
       if (!deleted) return;
     }
     await handleAddItemToSlot(categoryForDb, newProductId);
+  };
+
+  const handleDeclareCash = async (type: 'customer_payment' | 'delivery_expense') => {
+    if (!order) return;
+    const label = type === 'customer_payment' ? 'Mijozdan qabul qilingan summa' : "Dostavka uchun to'langan summa";
+    const amountStr = prompt(`${label} (so'mda, faqat raqam):`);
+    if (!amountStr) return;
+    const amount = Number(amountStr.replace(/[^0-9]/g, ''));
+    if (!amount || amount <= 0) { alert("Summa noto'g'ri kiritildi."); return; }
+    const note = prompt('Izoh (ixtiyoriy):') || undefined;
+
+    setDeclaringCash(type);
+    try {
+      const { error } = await supabase.rpc('sklad_declare_cash', {
+        p_order_id: order.id, p_type: type, p_amount_uzs: amount, p_note: note,
+      });
+      if (error) throw error;
+      alert("Yuborildi — Abdulaziz tasdiqlagach kassaga tushadi.");
+      await fetchCashPending();
+    } catch (err: any) {
+      alert('Xatolik: ' + err.message);
+    } finally {
+      setDeclaringCash(null);
+    }
+  };
+
+  const handleCancelCashPending = async (id: string) => {
+    const reason = prompt("Nima uchun bekor qilyapsiz? (sabab yozish majburiy)");
+    if (!reason || !reason.trim()) return;
+    try {
+      const { error } = await supabase.rpc('sklad_cancel_cash_pending', { p_pending_id: id, p_reason: reason });
+      if (error) throw error;
+      await fetchCashPending();
+    } catch (err: any) {
+      alert('Xatolik: ' + err.message);
+    }
   };
 
   const handleOtgruzkaClick = () => {
@@ -305,6 +373,64 @@ export default function SkladOrderDetailPage({ params }: { params: { id: string 
               <img src={order.otgruzka_photo_url} alt="Otgruzka isboti" style={{ width: '100%', borderRadius: 10, marginTop: 6 }} />
             </div>
           )}
+        </div>
+
+        <div className="card" style={{ marginTop: 16 }}>
+          <h2 style={{ fontSize: '1.05rem', margin: 0, marginBottom: 4 }}>Naqd amaliyotlar</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', marginTop: 0, marginBottom: 12 }}>
+            Bu yerda kiritilgan summalar kassaga to'g'ridan-to'g'ri tushmaydi — Abdulaziz tasdiqlagandan keyingina kassaga tushadi.
+          </p>
+
+          {cashPending.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              {cashPending.map(cp => (
+                <div key={cp.id} className="kirim-item-row">
+                  <div className="kirim-item-info">
+                    <div className="kirim-item-name">
+                      {cp.type === 'customer_payment' ? '💰 Mijozdan qabul qilindi' : '🚚 Dostavka puli'}
+                    </div>
+                    <div className="kirim-item-sub">
+                      {CASH_STATUS_LABEL[cp.status]}
+                      {cp.note ? ` · ${cp.note}` : ''}
+                      {cp.status === 'confirmed' && cp.confirmed_amount_uzs != null && Number(cp.confirmed_amount_uzs) !== Number(cp.declared_amount_uzs)
+                        ? ` · tasdiqlangan: ${Number(cp.confirmed_amount_uzs).toLocaleString('uz-UZ')} so'm`
+                        : ''}
+                      {cp.status === 'cancelled' || cp.status === 'rejected'
+                        ? (cp.resolution_reason ? ` · ${cp.resolution_reason}` : '')
+                        : ''}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div className="kirim-item-total">{Number(cp.declared_amount_uzs).toLocaleString('uz-UZ')} so'm</div>
+                    {cp.status === 'pending' && (
+                      <button className="kirim-item-del" onClick={() => handleCancelCashPending(cp.id)} title="Bekor qilish">
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              className="btn"
+              style={{ flex: 1, minWidth: 160, background: '#ecfdf5', border: '1px solid #6ee7b7', color: '#047857', fontWeight: 600 }}
+              onClick={() => handleDeclareCash('customer_payment')}
+              disabled={declaringCash !== null}
+            >
+              💰 Pul qabul qildim
+            </button>
+            <button
+              className="btn"
+              style={{ flex: 1, minWidth: 160, background: '#fff7ed', border: '1px solid #fdba74', color: '#c2410c', fontWeight: 600 }}
+              onClick={() => handleDeclareCash('delivery_expense')}
+              disabled={declaringCash !== null}
+            >
+              🚚 Dostavka puli
+            </button>
+          </div>
         </div>
 
         {!readOnly && (
