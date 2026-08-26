@@ -202,6 +202,7 @@ export default function WarehousePage() {
         cash_account_id: payAccountId,
         account_code: '12002',
         exchange_rate: isUsdAccount ? usedRate : null,
+        supplier_rate: usedRate,
         comment: `To'lov: Nakladnoy № ${payDoc.id.split('-')[0].toUpperCase()} (${payDoc.suppliers?.name || ''})`,
         supplier_id: payDoc.supplier_id,
         ref_table: 'receipt_docs',

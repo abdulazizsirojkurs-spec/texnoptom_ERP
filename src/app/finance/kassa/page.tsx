@@ -167,8 +167,13 @@ export default function KassaPage() {
     if (expenseAmt <= 0) return 0;
     const acc = cashAccounts.find(c => c.id === t.cash_account_id);
     if (acc?.currency === 'USD') return expenseAmt;
-    if (t.exchange_rate) return expenseAmt / Number(t.exchange_rate);
-    return 0; // kursi saqlanmagan eski noto'g'ri yozuvlar — avtomatik tuzatib bo'lmaydi
+    // supplier_rate — hamkor balansi ($) uchun alohida saqlangan kurs (2026-08-27'da
+    // ajratildi: avval shu maqsadda exchange_rate ishlatilar edi, lekin bu ustun
+    // ayni paytda expense_uzs'ni (so'm) ham boshqarardi — UZS hisobdan to'lansa,
+    // exchange_rate yozilishi expense_uzs'ni milliard martalab shishirib yuborardi).
+    if (t.supplier_rate) return expenseAmt / Number(t.supplier_rate);
+    if (t.exchange_rate) return expenseAmt / Number(t.exchange_rate); // eski, tuzatilmagan yozuvlar uchun orqaga moslik
+    return 0;
   };
 
   const handleEdit = (t: any) => {
@@ -183,7 +188,7 @@ export default function KassaPage() {
     // Postavshik bog'lanishini ham tiklaymiz — aks holda tahrirlab saqlaganda
     // supplier_id yo'qolib, balans hisob-kitobi buzilib qolardi.
     setSupplierId(t.supplier_id || '');
-    setSupplierExchangeRate(t.supplier_id && t.exchange_rate ? String(t.exchange_rate) : '');
+    setSupplierExchangeRate(t.supplier_id && (t.supplier_rate || t.exchange_rate) ? String(t.supplier_rate || t.exchange_rate) : '');
     setIsLegacyPayment(!!t.is_legacy_payment);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => amountRef.current?.focus(), 300);
@@ -249,9 +254,12 @@ export default function KassaPage() {
         expense: direction === 'expense' ? Number(amount) : 0,
         cash_account_id: cashAccountId,
         account_code: accountCode,
-        exchange_rate: needsExchangeRate
-          ? Number(exchangeRate)
-          : (supplierNeedsRate ? Number(supplierExchangeRate) : null),
+        // exchange_rate faqat hisobning o'zi USD bo'lsa yoziladi (expense_uzs generated
+        // columnni boshqaradi). Hamkorga to'lov kursi (UZS hisobdan bo'lsa ham) alohida
+        // supplier_rate'ga yoziladi — ikkalasini aralashtirish expense_uzs'ni buzib
+        // yuborgan edi (2026-08-27'da topilgan xato, 31 ta eski yozuv tuzatildi).
+        exchange_rate: needsExchangeRate ? Number(exchangeRate) : null,
+        supplier_rate: supplierNeedsRate ? Number(supplierExchangeRate) : null,
         comment: salaryNote || null,
         supplier_id: supplierId || null,
         is_legacy_payment: supplierId && direction === 'expense' && supplierHasLegacyDebt ? isLegacyPayment : false,
