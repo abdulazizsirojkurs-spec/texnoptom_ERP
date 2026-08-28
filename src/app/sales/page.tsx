@@ -208,10 +208,19 @@ export function SalesContent() {
           }
         }
       } else {
-        // Yangi buyurtma uchun raqam olish
-        const { count } = await supabase.from('sales_orders').select('*', { count: 'exact', head: true });
-        const nextNum = (count || 0) + 1;
-        setNextOrderCode(String(nextNum).padStart(3, '0'));
+        // Yangi buyurtma uchun raqam olish — jami QATOR SONI emas, balki
+        // mavjud eng katta TOG- raqamidan hisoblanadi. Sabab: buyurtma
+        // o'chirilsa (masalan dublikat tozalanganda), qator soni kamayadi,
+        // lekin eng katta raqam o'zgarmaydi — count+1 formulasi shu holatda
+        // ALLAQACHON band bo'lgan raqamni taklif qilib, xatolik berardi
+        // (2026-08-28'da aniqlangan).
+        const { data: codeRows } = await supabase.from('sales_orders').select('order_code');
+        let maxNum = 0;
+        (codeRows || []).forEach((r: any) => {
+          const n = parseInt(String(r.order_code).replace('TOG-', ''), 10);
+          if (!isNaN(n) && n > maxNum) maxNum = n;
+        });
+        setNextOrderCode(String(maxNum + 1).padStart(3, '0'));
       }
     }
     initData();
