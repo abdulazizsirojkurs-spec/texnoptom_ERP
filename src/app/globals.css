@@ -609,6 +609,12 @@ input, select, textarea { font-family: inherit; }
   margin-bottom: 6px; background: var(--surface); transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 .slot-row[data-filled="true"] { border-color: var(--accent-200, #c7d2fe); background: var(--accent-25, #f7f8ff); }
+/* Tanlangan tovar omborda yo'q — skladchi darhol ko'rib, olib kelishi kerakligini
+   bilishi uchun qizil bilan ajratiladi (2026-08-29, mobil buyurtma sahifasi). */
+.slot-row[data-out-of-stock="true"] { border-color: #fca5a5; background: #fef2f2; }
+.slot-row[data-out-of-stock="true"] .slot-row-label { color: #dc2626; }
+.slot-row[data-out-of-stock="true"] .slot-dot { background: #dc2626; border-color: #dc2626; }
+.slot-row[data-out-of-stock="true"] .slot-row-select { color: #dc2626; font-weight: 650; }
 
 .slot-row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
 .slot-row-label {

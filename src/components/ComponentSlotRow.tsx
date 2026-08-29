@@ -21,9 +21,14 @@ export default function ComponentSlotRow({
   onQtyChange?: (qty: number) => void;
 }) {
   const filled = !!value;
+  const selectedOption = filled ? options.find(o => o.id === value) : undefined;
+  // Tanlangan tovar hozir omborda yo'q (masalan otgruzka/vozvrat orqali
+  // qoldiq 0'ga tushib qolgan) — skladchi buni darhol ko'rib, olib kelishi
+  // kerakligini bilishi uchun qator qizil rangda ajratiladi.
+  const outOfStock = filled && selectedOption?.stock !== undefined && selectedOption.stock <= 0;
 
   return (
-    <div className="slot-row" data-filled={filled}>
+    <div className="slot-row" data-filled={filled} data-out-of-stock={outOfStock}>
       <div className="slot-row-top">
         <label className="slot-row-label">
           <span className="slot-dot" />
