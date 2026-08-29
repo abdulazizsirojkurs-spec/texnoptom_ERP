@@ -16,6 +16,7 @@ const MONTH_NAMES = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul',
 export default function KassaPage() {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [profileNames, setProfileNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [cashAccounts, setCashAccounts] = useState<CashAccount[]>([]);
   const [chartAccounts, setChartAccounts] = useState<ChartAccount[]>([]);
@@ -96,7 +97,7 @@ export default function KassaPage() {
       // (Moliya -> P&L) ko'rinadi, chunki ular real pul harakati emas.
       let query = supabase
         .from('cash_transactions')
-        .select(`*, cash_accounts!inner(name, currency, is_virtual), chart_of_accounts(name), suppliers(name), profiles(full_name)`)
+        .select(`*, cash_accounts!inner(name, currency, is_virtual), chart_of_accounts(name), suppliers(name)`)
         .eq('cash_accounts.is_virtual', false)
         .order('txn_date', { ascending: false })
         .order('created_at', { ascending: false })
@@ -111,6 +112,20 @@ export default function KassaPage() {
       const { data, error } = await query;
       if (error) throw error;
       setTransactions(data || []);
+
+      // cash_transactions.created_by -> auth.users (profiles'ga emas), shu sabab
+      // PostgREST orqali to'g'ridan-to'g'ri "embed" qilib bo'lmaydi (bu ustundan
+      // profiles(full_name)ga bog'lashga urinish butun so'rovni buzib qo'ygan edi,
+      // 2026-08-29'da topildi). Endi ism alohida so'rov bilan qo'lda bog'lanadi.
+      const creatorIds = Array.from(new Set((data || []).map((t: any) => t.created_by).filter(Boolean)));
+      if (creatorIds.length > 0) {
+        const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', creatorIds);
+        const map: Record<string, string> = {};
+        (profs || []).forEach((p: any) => { map[p.id] = p.full_name; });
+        setProfileNames(map);
+      } else {
+        setProfileNames({});
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -714,7 +729,7 @@ export default function KassaPage() {
                     <td style={{ padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>
                       {t.created_by ? (
                         <>
-                          {t.profiles?.full_name || 'noma\'lum'}<br />
+                          {profileNames[t.created_by] || 'noma\'lum'}<br />
                           {t.created_at && new Date(t.created_at).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         </>
                       ) : (
