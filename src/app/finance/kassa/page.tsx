@@ -11,6 +11,15 @@ type Employee = { id: string; full_name: string; department: string };
 
 const SALARY_ACCOUNT_CODES = ['13001', '14003', '15007']; // Nakladnoy/Adminstrativ/Tijoriy ish haqi
 
+// Abdulazizning shaxsiy/oilaviy moliya kategoriyalari — faqat u o'ziga oylik
+// kiritganda ko'rinadigan alohida (majburiy) tanlov. Umumiy toifa ro'yxatida
+// KO'RINMASLIGI kerak (aks holda har qanday xarajatga tasodifan tanlanib
+// qolishi mumkin edi) — shu sabab asosiy ro'yxatdan olib tashlanadi.
+const PERSONAL_ACCOUNT_CODES = [
+  '19004', '19005', '19006', '19007', '19008', '19009',
+  '19010', '19011', '19012', '19013', '19014', '19015', '19016',
+];
+
 const MONTH_NAMES = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
 
 export default function KassaPage() {
@@ -52,6 +61,7 @@ export default function KassaPage() {
   const [isLegacyPayment, setIsLegacyPayment] = useState(false);
   const [salaryEmployeeId, setSalaryEmployeeId] = useState('');
   const [salaryMonth, setSalaryMonth] = useState(() => new Date().getMonth());
+  const [personalCategoryCode, setPersonalCategoryCode] = useState('');
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState('');
   const amountRef = useRef<HTMLInputElement>(null);
@@ -137,8 +147,14 @@ export default function KassaPage() {
 
   const selectedCashAccount = cashAccounts.find(c => c.id === cashAccountId);
   const needsExchangeRate = selectedCashAccount?.currency === 'USD';
-  const filteredChartAccounts = chartAccounts.filter(c => c.flow_sign === (direction === 'income' ? '+' : '-'));
+  // Shaxsiy kategoriyalar umumiy toifa ro'yxatida ko'rinmaydi — ular faqat
+  // Abdulazizning o'z oyligi tanlanganda pastdagi alohida maydonda chiqadi.
+  const filteredChartAccounts = chartAccounts.filter(c => c.flow_sign === (direction === 'income' ? '+' : '-') && !PERSONAL_ACCOUNT_CODES.includes(c.code));
+  const personalChartAccounts = chartAccounts.filter(c => PERSONAL_ACCOUNT_CODES.includes(c.code));
   const isSalaryPayment = direction === 'expense' && SALARY_ACCOUNT_CODES.includes(accountCode);
+  // Xodim sifatida aynan Abdulaziz tanlansa — bu uning shaxsiy oyligi, shuning
+  // uchun qaysi shaxsiy/oilaviy manbaga ketayotgani majburiy tanlanishi kerak.
+  const isAbdulazizSalary = isSalaryPayment && employees.find(e => e.id === salaryEmployeeId)?.full_name === 'Abdulaziz';
 
   // Postavshik balansidan yechiladigan USD summa: agar kassa hisobi USD bo'lsa,
   // to'lov summasi allaqachon dollarda (kurs kerak emas). Agar so'mda bo'lsa —
@@ -162,6 +178,7 @@ export default function KassaPage() {
     setIsLegacyPayment(false);
     setSalaryEmployeeId('');
     setSalaryMonth(new Date().getMonth());
+    setPersonalCategoryCode('');
     if (!keepContext) {
       setDirection('expense');
       setAccountCode('');
@@ -205,6 +222,7 @@ export default function KassaPage() {
     setSupplierId(t.supplier_id || '');
     setSupplierExchangeRate(t.supplier_id && (t.supplier_rate || t.exchange_rate) ? String(t.supplier_rate || t.exchange_rate) : '');
     setIsLegacyPayment(!!t.is_legacy_payment);
+    setPersonalCategoryCode(t.personal_category_code || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => amountRef.current?.focus(), 300);
   };
@@ -255,6 +273,10 @@ export default function KassaPage() {
       alert("Ish haqi to'lovi uchun xodimni tanlang!");
       return;
     }
+    if (isAbdulazizSalary && !personalCategoryCode) {
+      alert("Bu — shaxsiy oylik. Shaxsiy/oilaviy manbani tanlang!");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -278,6 +300,7 @@ export default function KassaPage() {
         comment: salaryNote || null,
         supplier_id: supplierId || null,
         is_legacy_payment: supplierId && direction === 'expense' && supplierHasLegacyDebt ? isLegacyPayment : false,
+        personal_category_code: isAbdulazizSalary ? personalCategoryCode : null,
         created_by: user?.id || null,
       };
 
@@ -577,6 +600,16 @@ export default function KassaPage() {
                 {MONTH_NAMES.map((m, i) => <option key={m} value={i}>{m}</option>)}
               </select>
             </div>
+          </div>
+        )}
+
+        {isAbdulazizSalary && (
+          <div style={{ marginTop: '12px' }}>
+            <label className="field-label">Shaxsiy/oilaviy manba * (bu — sizning shaxsiy oyligingiz)</label>
+            <select className="input-field" value={personalCategoryCode} onChange={e => setPersonalCategoryCode(e.target.value)} style={{ borderColor: '#f59e0b', background: '#fffbeb' }}>
+              <option value="">Tanlang...</option>
+              {personalChartAccounts.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+            </select>
           </div>
         )}
 
