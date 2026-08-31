@@ -569,8 +569,16 @@ export default function KassaPage() {
 
           {needsExchangeRate && (
             <div>
-              <label className="field-label">Kurs</label>
-              <input type="number" className="input-field" placeholder="12700" value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} />
+              <label className="field-label">Kurs <span style={{ color: '#dc2626' }}>*</span></label>
+              <input
+                type="number"
+                className="input-field"
+                placeholder="12700"
+                value={exchangeRate}
+                onChange={e => setExchangeRate(e.target.value)}
+                required
+                style={!exchangeRate ? { borderColor: '#dc2626', background: '#fef2f2' } : undefined}
+              />
             </div>
           )}
         </div>
@@ -580,7 +588,12 @@ export default function KassaPage() {
             <label className="field-label">Izoh (ixtiyoriy)</label>
             <input type="text" className="input-field" placeholder="Masalan: Arenda to'lovi, iyul oyi" value={note} onChange={e => setNote(e.target.value)} />
           </div>
-          <button type="submit" disabled={saving} className="btn btn-primary" style={{ padding: '10px 28px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <button
+            type="submit"
+            disabled={saving || (needsExchangeRate && !exchangeRate) || (supplierNeedsRate && !supplierExchangeRate)}
+            className="btn btn-primary"
+            style={{ padding: '10px 28px', fontWeight: 700, whiteSpace: 'nowrap' }}
+          >
             {saving ? 'Saqlanmoqda...' : editingId ? 'Yangilash' : 'Saqlash'}
           </button>
         </div>
@@ -682,14 +695,15 @@ export default function KassaPage() {
             )}
             {supplierId && !supplierPaymentIsUsdAccount && (
               <div>
-                <label className="field-label">Kurs narxi</label>
+                <label className="field-label">Kurs narxi <span style={{ color: '#dc2626' }}>*</span></label>
                 <input
                   type="number"
                   className="input-field"
                   placeholder="masalan 12600"
                   value={supplierExchangeRate}
                   onChange={e => setSupplierExchangeRate(e.target.value)}
-                  style={{ borderColor: '#f59e0b', background: '#fffbeb' }}
+                  required
+                  style={supplierExchangeRate ? { borderColor: '#f59e0b', background: '#fffbeb' } : { borderColor: '#dc2626', background: '#fef2f2' }}
                 />
                 {supplierExchangeRate && amount && (
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
