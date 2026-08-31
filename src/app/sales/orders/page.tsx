@@ -11,6 +11,14 @@ import ComponentSlotProgress from '@/components/ComponentSlotProgress';
 
 type CashAccount = { id: string; name: string; currency: string };
 
+// client_address "{Viloyat}, {Tuman} tumani, {Mahalla}" shaklida saqlanadi (sales/page.tsx).
+// Faqat "Toshkent shahri" shahar hisoblanadi — qolgan hammasi (Toshkent viloyati ham,
+// Qoraqalpog'iston ham) "Viloyat" toifasiga kiradi.
+const getRegionCategory = (clientAddress: string | null | undefined): 'toshkent_shahar' | 'viloyat' | null => {
+  if (!clientAddress) return null;
+  return clientAddress.trim().startsWith('Toshkent shahri') ? 'toshkent_shahar' : 'viloyat';
+};
+
 export default function SalesOrdersPage() {
   const { user, role } = useAuth();
   const router = useRouter();
@@ -24,6 +32,8 @@ export default function SalesOrdersPage() {
   const [endDate, setEndDate] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sellerFilter, setSellerFilter] = useState('');
+  const [debtOnly, setDebtOnly] = useState(false);
+  const [regionFilter, setRegionFilter] = useState<'' | 'toshkent_shahar' | 'viloyat'>('');
 
   // Tezkor to'lov/dostavka kiritish oynasi
   const [modalOrder, setModalOrder] = useState<any>(null);
@@ -460,6 +470,16 @@ export default function SalesOrdersPage() {
     return <span style={{ backgroundColor: '#fef08a', color: '#854d0e', padding: '4px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Clock size={14}/> Yangi buyurtma</span>;
   };
 
+  const visibleOrders = orders.filter(order => {
+    if (debtOnly) {
+      const ps = paymentStatus[order.id];
+      const remaining = ps ? Number(ps.remaining_uzs) : Number(order.total_uzs_price);
+      if (remaining <= 0) return false;
+    }
+    if (regionFilter && getRegionCategory(order.client_address) !== regionFilter) return false;
+    return true;
+  });
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -520,6 +540,31 @@ export default function SalesOrdersPage() {
           </div>
         )}
 
+        <div style={{ flex: '0 0 auto' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '9px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: debtOnly ? '#fee2e2' : '#fff', color: debtOnly ? '#991b1b' : '#475569', fontWeight: 600, fontSize: '0.85rem' }}>
+            <input
+              type="checkbox"
+              checked={debtOnly}
+              onChange={(e) => setDebtOnly(e.target.checked)}
+              style={{ width: '16px', height: '16px' }}
+            />
+            Faqat qarzdorligi bor buyurtmalar
+          </label>
+        </div>
+
+        <div style={{ flex: '1 1 180px' }}>
+          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Hudud</label>
+          <select
+            value={regionFilter}
+            onChange={(e) => setRegionFilter(e.target.value as any)}
+            style={inputStyle}
+          >
+            <option value="">Barchasi</option>
+            <option value="toshkent_shahar">Toshkent shahar</option>
+            <option value="viloyat">Viloyat</option>
+          </select>
+        </div>
+
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden', overflowX: 'auto' }}>
@@ -544,12 +589,14 @@ export default function SalesOrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {orders.length === 0 ? (
+              {visibleOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={(role === 'admin' || isSkladchi) ? 12 : 11} style={{ padding: '24px', textAlign: 'center' }}>Hozircha buyurtmalar yo'q.</td>
+                  <td colSpan={(role === 'admin' || isSkladchi) ? 12 : 11} style={{ padding: '24px', textAlign: 'center' }}>
+                    {debtOnly ? "Qarzdorligi bor buyurtma topilmadi." : "Hozircha buyurtmalar yo'q."}
+                  </td>
                 </tr>
               ) : (
-                orders.map(order => (
+                visibleOrders.map(order => (
                   <tr key={order.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '16px' }}>
                       <div style={{ fontWeight: 'bold', color: 'var(--primary)', marginBottom: '4px' }}>{order.order_code}</div>
