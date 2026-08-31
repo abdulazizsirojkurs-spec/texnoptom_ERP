@@ -28,7 +28,7 @@ export default function CashFlowPage() {
         .from('cash_transactions')
         .select(`
           txn_date, income_uzs, expense_uzs,
-          chart_of_accounts(pnl_section),
+          chart_of_accounts!cash_transactions_account_code_fkey(pnl_section),
           cash_accounts!inner(is_virtual)
         `)
         .eq('cash_accounts.is_virtual', false)

@@ -48,7 +48,7 @@ export default function PnLPage() {
       // kunlik filtr qo'yish uchun (oylik view buni qo'llab-quvvatlamaydi).
       const { data, error } = await supabase
         .from('cash_transactions')
-        .select('txn_date, income_uzs, expense_uzs, account_code, chart_of_accounts(pnl_section, name)')
+        .select('txn_date, income_uzs, expense_uzs, account_code, chart_of_accounts!cash_transactions_account_code_fkey(pnl_section, name)')
         .gte('txn_date', effectiveStart)
         .lte('txn_date', endOfYear)
         .limit(5000);
