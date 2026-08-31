@@ -440,6 +440,11 @@ export default function SalesOrdersPage() {
     if (remaining <= 0) {
       return <span style={{ backgroundColor: '#dcfce7', color: '#15803d', padding: '4px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={14}/> To'liq to'langan</span>;
     }
+    // Otgruzka qilinmagan buyurtma hali mijozga chiqmagan — "qarzdorlik" emas,
+    // shu sabab qizil/sariq ogohlantiruvchi belgi emas, oddiy summa ko'rsatiladi.
+    if (!order.is_shipped) {
+      return <span style={{ fontSize: '0.85rem', color: '#64748b' }}>{remaining.toLocaleString('uz-UZ')} so'm</span>;
+    }
     if (remaining < total) {
       return <span style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '4px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Qisman: {remaining.toLocaleString('uz-UZ')} qoldi</span>;
     }
@@ -472,6 +477,8 @@ export default function SalesOrdersPage() {
 
   const visibleOrders = orders.filter(order => {
     if (debtOnly) {
+      // Otgruzka qilinmagan buyurtma hali "qarz" hisoblanmaydi (biznes qoidasi).
+      if (!order.is_shipped) return false;
       const ps = paymentStatus[order.id];
       const remaining = ps ? Number(ps.remaining_uzs) : Number(order.total_uzs_price);
       if (remaining <= 0) return false;
