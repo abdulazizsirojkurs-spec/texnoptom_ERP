@@ -466,6 +466,23 @@ export default function KassaPage() {
             >
               <ArrowLeftRight size={20} /> Hisob Almashuv
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                const abdulaziz = employees.find(e => e.full_name === 'Abdulaziz');
+                setDirection('expense');
+                setAccountCode('14003');
+                if (abdulaziz) setSalaryEmployeeId(abdulaziz.id);
+                setTimeout(() => amountRef.current?.focus(), 50);
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 20px', borderRadius: '8px',
+                border: '1px dashed #f59e0b', background: '#fffbeb', color: '#92400e',
+                fontWeight: 700, cursor: 'pointer', fontSize: '0.95rem',
+              }}
+            >
+              ⚡ Shaxsiy oylik
+            </button>
           </div>
 
           {(flash || exchFlash) && (
