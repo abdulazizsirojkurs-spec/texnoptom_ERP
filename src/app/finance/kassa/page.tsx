@@ -17,7 +17,7 @@ const SALARY_ACCOUNT_CODES = ['13001', '14003', '15007']; // Nakladnoy/Adminstra
 // qolishi mumkin edi) — shu sabab asosiy ro'yxatdan olib tashlanadi.
 const PERSONAL_ACCOUNT_CODES = [
   '19004', '19005', '19006', '19007', '19008', '19009',
-  '19010', '19011', '19012', '19013', '19014', '19015', '19016',
+  '19010', '19011', '19012', '19013', '19014', '19015', '19016', '19017',
 ];
 
 const MONTH_NAMES = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
