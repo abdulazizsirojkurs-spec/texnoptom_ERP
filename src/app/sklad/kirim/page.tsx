@@ -7,7 +7,6 @@ import SkladHeader from '@/components/sklad/SkladHeader';
 export default function SkladKirimPage() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
 
   const [selectedSupplier, setSelectedSupplier] = useState('');
@@ -21,15 +20,9 @@ export default function SkladKirimPage() {
   const [kirimLoading, setKirimLoading] = useState(false);
   const [kirimSuccess, setKirimSuccess] = useState('');
 
-  const [showNewProductForm, setShowNewProductForm] = useState(false);
-  const [newProductName, setNewProductName] = useState('');
-  const [newProductCategoryId, setNewProductCategoryId] = useState('');
-  const [newProductSaving, setNewProductSaving] = useState(false);
-
   useEffect(() => {
     supabase.from('suppliers').select('*').order('name').then(({ data }) => { if (data) setSuppliers(data); });
     supabase.from('products').select('*, categories(name)').then(({ data }) => { if (data) setProducts(data); });
-    supabase.from('categories').select('*').order('name').then(({ data }) => { if (data) setCategories(data); });
     supabase.from('inventory_balances').select('product_id, quantity').then(({ data }) => {
       if (data) {
         const m: Record<string, number> = {};
@@ -38,39 +31,6 @@ export default function SkladKirimPage() {
       }
     });
   }, []);
-
-  const handleOpenNewProductForm = () => {
-    setNewProductName(kirimSearchTerm);
-    setNewProductCategoryId('');
-    setShowNewProductForm(true);
-    setShowKirimDropdown(false);
-  };
-
-  const handleCreateProduct = async () => {
-    const name = newProductName.trim();
-    if (!name) { alert('Mahsulot nomini kiriting'); return; }
-    if (!newProductCategoryId) { alert('Kategoriyani tanlang'); return; }
-    setNewProductSaving(true);
-    try {
-      const { data: newId, error } = await supabase.rpc('sklad_create_product', {
-        p_name: name,
-        p_category_id: newProductCategoryId,
-      });
-      if (error) throw error;
-      const category = categories.find(c => c.id === newProductCategoryId);
-      setProducts(prev => {
-        if (prev.some(p => p.id === newId)) return prev;
-        return [...prev, { id: newId, name, category_id: newProductCategoryId, categories: { name: category?.name } }];
-      });
-      setSelectedProduct(newId);
-      setKirimSearchTerm(name);
-      setShowNewProductForm(false);
-    } catch (error: any) {
-      alert('Xatolik: ' + error.message);
-    } finally {
-      setNewProductSaving(false);
-    }
-  };
 
   const handleAddItemToReceipt = () => {
     if (!selectedProduct || !kirimQty || !kirimPriceUsd) return;
@@ -166,7 +126,9 @@ export default function SkladKirimPage() {
                     return (
                       <>
                         {list.length === 0 ? (
-                          <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Topilmadi</div>
+                          <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                            Topilmadi. Bu tovar katalogda yo'q bo'lsa, CEO/admin bilan bog'laning — u yangi tovar qo'shib beradi.
+                          </div>
                         ) : list.map(prod => {
                           const stock = stockMap[prod.id] ?? 0;
                           return (
@@ -180,54 +142,12 @@ export default function SkladKirimPage() {
                             </div>
                           );
                         })}
-                        <div
-                          className="kirim-search-item"
-                          style={{ color: 'var(--accent-600)', fontWeight: 600 }}
-                          onMouseDown={handleOpenNewProductForm}
-                        >
-                          <span className="name">➕ Yangi mahsulot qo'shish{kirimSearchTerm ? `: «${kirimSearchTerm}»` : ''}</span>
-                        </div>
                       </>
                     );
                   })()}
                 </div>
               )}
             </div>
-
-            {showNewProductForm && (
-              <div className="card" style={{ background: 'var(--accent-50)', border: '1px solid var(--accent-200)', padding: 16, borderRadius: 10, marginBottom: 4 }}>
-                <div style={{ fontWeight: 600, marginBottom: 12 }}>➕ Yangi mahsulot qo'shish</div>
-                <div style={{ marginBottom: 12 }}>
-                  <label className="field-label">Mahsulot nomi</label>
-                  <input
-                    type="text"
-                    className="input-field input-lg"
-                    placeholder="Masalan: RTX5060 8GB"
-                    value={newProductName}
-                    onChange={e => setNewProductName(e.target.value)}
-                  />
-                </div>
-                <div style={{ marginBottom: 12 }}>
-                  <label className="field-label">Kategoriya</label>
-                  <select
-                    className="input-field input-lg"
-                    value={newProductCategoryId}
-                    onChange={e => setNewProductCategoryId(e.target.value)}
-                  >
-                    <option value="">Tanlang...</option>
-                    {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-                  </select>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowNewProductForm(false)} disabled={newProductSaving}>
-                    Bekor qilish
-                  </button>
-                  <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleCreateProduct} disabled={newProductSaving}>
-                    {newProductSaving ? 'Saqlanmoqda...' : "Qo'shish"}
-                  </button>
-                </div>
-              </div>
-            )}
 
             <div className="kirim-two-col">
               <div>
