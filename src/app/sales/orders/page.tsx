@@ -11,7 +11,7 @@ import ComponentSlotProgress from '@/components/ComponentSlotProgress';
 
 type CashAccount = { id: string; name: string; currency: string };
 
-// client_address "{Viloyat}, {Tuman} tumani, {Mahalla}" shaklida saqlanadi (sales/page.tsx).
+// client_address "{Viloyat}, {Tuman} tumani" shaklida saqlanadi (sales/page.tsx).
 // Faqat "Toshkent shahri" shahar hisoblanadi — qolgan hammasi (Toshkent viloyati ham,
 // Qoraqalpog'iston ham) "Viloyat" toifasiga kiradi.
 const getRegionCategory = (clientAddress: string | null | undefined): 'toshkent_shahar' | 'viloyat' | null => {

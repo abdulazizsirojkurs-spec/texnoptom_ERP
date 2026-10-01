@@ -122,18 +122,19 @@ export function SalesContent() {
   const [address, setAddress] = useState('');
   const [viloyat, setViloyat] = useState('');
   const [tuman, setTuman] = useState('');
-  const [mahalla, setMahalla] = useState('');
 
-  // Viloyat/tuman/mahalla to'ldirilganda, ular avtomatik yagona "Manzil"
+  // Viloyat/tuman to'ldirilganda, ular avtomatik yagona "Manzil"
   // (client_address) qatoriga birlashtiriladi — bazada alohida ustun ochish
   // shart emas. Eski (tahrirlanayotgan) buyurtmalarning manzili shu maydonlar
   // to'ldirilmaguncha o'zgarmasdan qoladi.
+  // 2026-10-01 (CEO): "Mahalla / to'liq manzil" maydoni olib tashlandi —
+  // yetkazib berish uchun viloyat va tuman yetarli.
   useEffect(() => {
-    if (viloyat || tuman || mahalla) {
-      const parts = [viloyat, tuman ? `${tuman} tumani` : '', mahalla].filter(Boolean);
+    if (viloyat || tuman) {
+      const parts = [viloyat, tuman ? `${tuman} tumani` : ''].filter(Boolean);
       setAddress(parts.join(', '));
     }
-  }, [viloyat, tuman, mahalla]);
+  }, [viloyat, tuman]);
   const [salesChannel, setSalesChannel] = useState('');
   const [contractNumber, setContractNumber] = useState('');
   const [priceUsd, setPriceUsd] = useState('');
@@ -501,15 +502,11 @@ export function SalesContent() {
               </div>
             </div>
 
-            <div>
-              <label style={labelStyle}>Mahalla / to'liq manzil *</label>
-              <input type="text" value={mahalla} onChange={e => setMahalla(e.target.value)} style={inputStyle} placeholder="Ko'cha, uy raqami va h.k." />
-              {!viloyat && !tuman && !mahalla && address && (
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
-                  Joriy manzil: {address}
-                </div>
-              )}
-            </div>
+            {!viloyat && !tuman && address && (
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '-8px' }}>
+                Joriy manzil: {address}
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
               <div>
