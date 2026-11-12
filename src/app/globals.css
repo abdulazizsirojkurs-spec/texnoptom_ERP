@@ -836,3 +836,65 @@ input, select, textarea { font-family: inherit; }
 .ks-sheet-sum { font-size: 0.9rem; color: var(--gray-600); background: var(--gray-50); border-radius: 10px; padding: 9px 11px; margin-bottom: 4px; }
 .ks-sheet-actions { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; margin-top: 8px; }
 .ks-sheet-actions .ks-btn { min-height: 50px; }
+
+/* ---- /kassir: shaxsiy xarajat, xodim oyligi, sana, filtr, tahrirlash, oy hisoboti ---- */
+.ks-big.amber { min-height: 56px; font-size: 1rem; background: linear-gradient(160deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(217,119,6,0.26); }
+.ks-big.violet { min-height: 56px; font-size: 1rem; background: linear-gradient(160deg, #8b5cf6, #7c3aed); box-shadow: 0 4px 12px rgba(124,58,237,0.26); }
+.ks-btn-amber { background: #d97706; color: #fff; box-shadow: 0 4px 12px rgba(217,119,6,0.26); }
+.ks-btn-violet { background: #7c3aed; color: #fff; box-shadow: 0 4px 12px rgba(124,58,237,0.26); }
+.ks-amount.amber { color: #b45309; }
+.ks-amount.violet { color: #6d28d9; }
+
+/* Kun/oy tanlash qatori: tugmalar + kalendar/ro'yxat */
+.ks-datefield { display: flex; gap: 8px; align-items: stretch; }
+.ks-date-input { flex: 1; min-width: 0; padding: 9px 10px; min-height: 44px; }
+.ks-date-input.picked { border-color: var(--accent-600); box-shadow: 0 0 0 2px var(--accent-100); }
+
+/* Ro'yxat filtri */
+.ks-seg { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.ks-seg::-webkit-scrollbar { display: none; }
+.ks-segbtn {
+  flex-shrink: 0; min-height: 36px; padding: 6px 14px; border-radius: 999px; border: 1.5px solid var(--gray-300);
+  background: var(--surface); color: var(--gray-700); font-size: 0.85rem; font-weight: 650; cursor: pointer;
+}
+.ks-segbtn.on { background: var(--gray-900); border-color: var(--gray-900); color: #fff; }
+
+.ks-txn-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ks-txn-actions .ks-btn { min-height: 46px; }
+.ks-txn-actions .ks-btn:only-child { grid-column: 1 / -1; }
+
+.ks-edit-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #eff6ff; color: #1e40af;
+  border: 1px solid #bfdbfe; border-radius: 12px; padding: 10px 12px; font-size: 0.85rem;
+}
+.ks-edit-banner b { font-size: 0.9rem; }
+
+/* Shaxsiy toifalar (limit chizig'i bilan) */
+.ks-pgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ks-pcard {
+  display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 10px 11px; min-height: 76px;
+  border: 1.5px solid var(--gray-300); border-radius: 12px; background: var(--surface); cursor: pointer;
+}
+.ks-pcard.on { border-color: #d97706; background: #fffbeb; box-shadow: 0 0 0 2px #fde68a; }
+.ks-pcard-name { font-size: 0.86rem; font-weight: 650; color: var(--gray-900); line-height: 1.2; }
+.ks-pcard-sub { font-size: 0.72rem; color: var(--gray-500); margin-top: auto; }
+.ks-pcard-sub.over { color: #b91c1c; font-weight: 650; }
+
+.ks-bar { display: block; height: 6px; border-radius: 999px; background: var(--gray-100); overflow: hidden; }
+.ks-bar-fill { display: block; height: 100%; border-radius: 999px; background: #10b981; transition: width 0.2s ease; }
+.ks-bar-fill.warn { background: #f59e0b; }
+.ks-bar-fill.over { background: #ef4444; }
+.ks-bar-fill.out { background: #f87171; }
+.ks-bar-fill.in { background: #34d399; }
+
+/* Oy hisoboti */
+.ks-rep-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.ks-rep-title { font-size: 1rem; font-weight: 750; color: var(--gray-900); }
+.ks-rep-sum { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.ks-rep-sum.two { grid-template-columns: 1fr 1fr; }
+.ks-rep-sum > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 0.82rem; }
+.ks-rep-sum b { font-variant-numeric: tabular-nums; font-weight: 750; word-break: break-word; }
+.ks-rep-sub { font-size: 0.72rem; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+.ks-rep-row { display: flex; flex-direction: column; gap: 5px; }
+.ks-rep-row-top { display: flex; justify-content: space-between; gap: 10px; font-size: 0.86rem; color: var(--gray-800); }
+.ks-rep-row-top b { font-variant-numeric: tabular-nums; white-space: nowrap; }

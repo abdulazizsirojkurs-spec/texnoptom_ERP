@@ -1,13 +1,49 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowDownCircle, ArrowUpCircle, ArrowRightLeft, ChevronLeft, ChevronRight, LogOut, RefreshCw } from 'lucide-react';
+import {
+  ArrowDownCircle, ArrowUpCircle, ArrowRightLeft, BarChart3, ChevronLeft, ChevronRight, HeartHandshake,
+  LogOut, RefreshCw, UserRound,
+} from 'lucide-react';
 import KassirShell from '@/components/kassir/KassirShell';
 import CancelSheet from '@/components/kassir/CancelSheet';
 import { useAuth } from '@/context/AuthContext';
 import {
-  KAccount, KTxn, TxnRow, rpc, fmtMoney, fmtParts, buildRows, tashkentToday, shiftDate, dateLabel, timeHM,
+  KAccount, KDay, TxnRow, rpc, fmtMoney, fmtParts, buildRows, tashkentToday, shiftDate, dateLabel, timeHM,
+  clearEdit, stashEdit, editPayloadOf, routeForKind, parsePrefixedComment, MONTHS,
 } from '@/lib/kassir';
+
+type Filter = 'all' | 'in' | 'out' | 'personal' | 'salary' | 'exchange';
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: 'all', label: 'Hammasi' },
+  { key: 'in', label: 'Kirim' },
+  { key: 'out', label: 'Chiqim' },
+  { key: 'personal', label: 'Shaxsiy' },
+  { key: 'salary', label: 'Oylik' },
+  { key: 'exchange', label: 'Almashuv' },
+];
+
+function rowTitle(r: TxnRow): string {
+  if (r.kind === 'exchange') return 'Almashuv';
+  const t = r.t;
+  if (t.kind === 'salary') {
+    const pc = parsePrefixedComment(t.comment);
+    return `Oylik — ${pc?.name ?? t.category_name}`;
+  }
+  return t.category_name;
+}
+
+function rowSub(r: TxnRow): string {
+  const t = r.t;
+  const acc = r.kind === 'exchange' ? `${r.from.account_name} → ${r.to.account_name}` : t.account_name;
+  let extra = '';
+  if (r.kind === 'txn' && t.kind === 'salary') {
+    const pc = parsePrefixedComment(t.comment);
+    if (pc) extra = ` · ${MONTHS[pc.month - 1]} oyi uchun`;
+  }
+  if (r.kind === 'txn' && t.kind === 'personal') extra = ' · shaxsiy';
+  return `${acc}${extra} · ${timeHM(t.created_at)}${t.is_mine ? '' : ` · ${t.author_name}`}`;
+}
 
 function rowSummary(r: TxnRow): string {
   if (r.kind === 'exchange') {
@@ -15,7 +51,16 @@ function rowSummary(r: TxnRow): string {
   }
   const t = r.t;
   const amt = t.income > 0 ? fmtMoney(t.income, t.currency, true) : fmtMoney(-t.expense, t.currency);
-  return `${amt} · ${t.account_name} · ${t.category_name}`;
+  return `${amt} · ${t.account_name} · ${rowTitle(r)}`;
+}
+
+function matches(r: TxnRow, f: Filter): boolean {
+  if (f === 'all') return true;
+  if (f === 'exchange') return r.kind === 'exchange';
+  if (r.kind === 'exchange') return false;
+  if (f === 'in') return r.t.income > 0;
+  if (f === 'out') return r.t.expense > 0;
+  return r.t.kind === f;
 }
 
 export default function KassirHome() {
@@ -26,9 +71,10 @@ export default function KassirHome() {
   const [today, setToday] = useState(tashkentToday());
   const [date, setDate] = useState(today);
   const [accounts, setAccounts] = useState<KAccount[]>([]);
-  const [txns, setTxns] = useState<KTxn[]>([]);
+  const [txns, setTxns] = useState<KDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<TxnRow | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -39,7 +85,7 @@ export default function KassirHome() {
     try {
       const [a, t] = await Promise.all([
         rpc<KAccount[]>('kassir_accounts'),
-        rpc<KTxn[]>('kassir_txns', { p_date: d }),
+        rpc<KDay[]>('kassir_day', { p_date: d }),
       ]);
       setAccounts(a);
       setTxns(t);
@@ -67,6 +113,7 @@ export default function KassirHome() {
   }, [allowed, date, load]);
 
   const rows = useMemo(() => buildRows(txns), [txns]);
+  const shown = useMemo(() => rows.filter((r) => matches(r, filter)), [rows, filter]);
 
   // Kun jami (almashuv hisobga olinmaydi — u pul kirimi/chiqimi emas, ichki o'tkazma)
   const dayTotals = useMemo(() => {
@@ -79,6 +126,15 @@ export default function KassirHome() {
     }
     return m;
   }, [txns]);
+
+  const go = (path: string) => { clearEdit(); router.push(path); };
+
+  const doEdit = (r: TxnRow) => {
+    const p = editPayloadOf(r.t);
+    if (!p) return;
+    stashEdit(p);
+    router.push(routeForKind(p.kind));
+  };
 
   const doCancel = async (reason: string) => {
     if (!cancelTarget) return;
@@ -105,6 +161,9 @@ export default function KassirHome() {
 
   const headerRight = (
     <>
+      <button className="ks-iconbtn" onClick={() => go('/kassir/hisobot')} aria-label="Oylik hisobot">
+        <BarChart3 size={20} />
+      </button>
       <button className="ks-iconbtn" onClick={() => { setLoading(true); load(date); }} aria-label="Yangilash">
         <RefreshCw size={19} />
       </button>
@@ -145,13 +204,19 @@ export default function KassirHome() {
       </div>
 
       <div className="ks-actions3">
-        <button className="ks-big in" onClick={() => router.push('/kassir/kirim')}>
+        <button className="ks-big in" onClick={() => go('/kassir/kirim')}>
           <ArrowDownCircle size={26} /> Kirim
         </button>
-        <button className="ks-big out" onClick={() => router.push('/kassir/chiqim')}>
+        <button className="ks-big out" onClick={() => go('/kassir/chiqim')}>
           <ArrowUpCircle size={26} /> Chiqim
         </button>
-        <button className="ks-big ex" onClick={() => router.push('/kassir/almashuv')}>
+        <button className="ks-big amber" onClick={() => go('/kassir/shaxsiy')}>
+          <HeartHandshake size={22} /> Shaxsiy
+        </button>
+        <button className="ks-big violet" onClick={() => go('/kassir/oylik')}>
+          <UserRound size={22} /> Xodim oyligi
+        </button>
+        <button className="ks-big ex" onClick={() => go('/kassir/almashuv')}>
           <ArrowRightLeft size={24} /> Almashuv
         </button>
       </div>
@@ -174,16 +239,26 @@ export default function KassirHome() {
       </div>
 
       {txns.length > 0 && (
-        <div className="ks-daysum">
-          <div><span className="ks-daysum-l">Kirim</span><b className="ks-pos">{fmtTotals('in')}</b></div>
-          <div><span className="ks-daysum-l">Chiqim</span><b className="ks-neg">{fmtTotals('out')}</b></div>
-        </div>
+        <>
+          <div className="ks-daysum">
+            <div><span className="ks-daysum-l">Kirim</span><b className="ks-pos">{fmtTotals('in')}</b></div>
+            <div><span className="ks-daysum-l">Chiqim</span><b className="ks-neg">{fmtTotals('out')}</b></div>
+          </div>
+          <div className="ks-seg">
+            {FILTERS.map((f) => (
+              <button key={f.key} className={`ks-segbtn ${filter === f.key ? 'on' : ''}`} onClick={() => setFilter(f.key)}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="ks-list">
         {loading && <div className="ks-empty">Yuklanmoqda...</div>}
         {!loading && rows.length === 0 && !error && <div className="ks-empty">Bu kunda yozuv yo&apos;q</div>}
-        {rows.map((r) => {
+        {!loading && rows.length > 0 && shown.length === 0 && <div className="ks-empty">Bu turdagi yozuv yo&apos;q</div>}
+        {shown.map((r) => {
           const open = openKey === r.key;
           const t = r.t;
           const isEx = r.kind === 'exchange';
@@ -192,11 +267,8 @@ export default function KassirHome() {
             <div key={r.key} className={`ks-txn ${open ? 'open' : ''}`}>
               <button className="ks-txn-main" onClick={() => setOpenKey(open ? null : r.key)}>
                 <div className="ks-txn-left">
-                  <div className="ks-txn-cat">{isEx ? 'Almashuv' : t.category_name}</div>
-                  <div className="ks-txn-sub">
-                    {isEx ? `${r.from.account_name} → ${r.to.account_name}` : t.account_name} · {timeHM(t.created_at)}
-                    {!t.is_mine && ` · ${t.author_name}`}
-                  </div>
+                  <div className="ks-txn-cat">{rowTitle(r)}</div>
+                  <div className="ks-txn-sub">{rowSub(r)}</div>
                 </div>
                 <div className={`ks-txn-amt ${isEx ? 'ex' : incomeRow ? 'in' : 'out'}`}>
                   {isEx
@@ -209,14 +281,19 @@ export default function KassirHome() {
                   {t.comment && <div className="ks-txn-comment">{t.comment}</div>}
                   <div className="ks-txn-meta">
                     {t.author_name} · {timeHM(t.created_at)}
-                    {!isEx && t.exchange_rate ? ` · kurs ${fmtMoney(t.exchange_rate, 'UZS')}` : ''}
+                    {!isEx && t.exchange_rate ? ` · kurs ${fmtMoney(t.exchange_rate, 'UZS')} → ${fmtMoney((t.income || t.expense) * t.exchange_rate, 'UZS')}` : ''}
                   </div>
                   {t.can_cancel ? (
-                    <button className="ks-btn ks-btn-danger-soft" onClick={() => { setCancelError(''); setCancelTarget(r); }}>
-                      Yozuvni bekor qilish
-                    </button>
-                  ) : t.is_mine && date === today ? (
-                    <div className="ks-hint">Bu yozuvni faqat admin bekor qila oladi.</div>
+                    <div className="ks-txn-actions">
+                      {t.can_edit && (
+                        <button className="ks-btn ks-btn-ghost" onClick={() => doEdit(r)}>Tahrirlash</button>
+                      )}
+                      <button className="ks-btn ks-btn-danger-soft" onClick={() => { setCancelError(''); setCancelTarget(r); }}>
+                        Bekor qilish
+                      </button>
+                    </div>
+                  ) : t.is_mine ? (
+                    <div className="ks-hint">Bu yozuvni faqat admin o&apos;zgartira oladi.</div>
                   ) : null}
                 </div>
               )}

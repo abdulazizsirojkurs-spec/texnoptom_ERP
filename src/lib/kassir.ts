@@ -3,6 +3,9 @@
 // to'g'ridan-to'g'ri murojaat yo'q (ruxsat bazaning o'zida cheklangan).
 import { supabase } from '@/utils/supabase';
 
+// 'personal' = Abdulaziz oyligi hisobiga yoziladigan shaxsiy/oilaviy xarajat,
+// 'salary' = xodimga oylik/avans (kompyuterdagi kassa bilan bir xil yozuv shakli).
+export type Kind = 'income' | 'expense' | 'personal' | 'salary';
 export type Flow = 'income' | 'expense';
 
 export type KAccount = {
@@ -10,18 +13,26 @@ export type KAccount = {
   balance: number; today_in: number; today_out: number;
 };
 export type KCategory = { code: string; name: string };
-export type KTxn = {
-  id: string; txn_date: string; created_at: string; account_name: string; currency: string;
+export type KDay = {
+  id: string; txn_date: string; created_at: string; account_id: string; account_name: string; currency: string;
   income: number; expense: number; exchange_rate: number | null;
-  category_code: string; category_name: string; comment: string | null;
-  author_name: string; is_mine: boolean; can_cancel: boolean;
+  category_code: string; category_name: string;
+  kind: 'income' | 'expense' | 'personal' | 'salary' | 'supplier' | 'exchange' | 'other';
+  personal_code: string | null; comment: string | null; author_name: string;
+  is_mine: boolean; can_cancel: boolean; can_edit: boolean;
 };
+export type PersonalCat = { code: string; name: string; monthly_limit: number; spent: number };
+export type Employee = { id: string; full_name: string; department: string; last_code: string | null };
+export type MonthRow = { currency: string; flow: 'in' | 'out'; label: string; total: number; n: number };
 
 // Katta chiqim chegarasi (bazadagi qiymat bilan bir xil) — faqat ogohlantirish uchun.
 export const BIG_UZS = 5_000_000;
 export const BIG_USD = 500;
 export const RATE_MIN = 5000;
 export const RATE_MAX = 50000;
+export const BACK_DAYS = 7; // necha kun orqaga sana qo'yish mumkin
+
+export const MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
 
 export async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.rpc(fn, args);
@@ -75,6 +86,11 @@ export function parseAmount(s: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+// Tahrirlashda mavjud summani maydonga qaytarish uchun ("1200000" -> "1 200 000").
+export function amountToInput(n: number, allowDecimal: boolean): string {
+  return formatAmountInput(String(allowDecimal ? n : Math.round(n)), allowDecimal);
+}
+
 // ---------- Sana/vaqt (Toshkent) ----------
 export function tashkentToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
@@ -95,6 +111,12 @@ export function dateLabel(d: string, today: string): string {
 
 export function timeHM(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit' });
+}
+
+// "2026-11-13" -> { year: 2026, month: 11 }
+export function ymOf(d: string): { year: number; month: number } {
+  const [y, m] = d.split('-').map(Number);
+  return { year: y, month: m };
 }
 
 // ---------- Brauzer xotirasi (faqat qulaylik; ishlamasa ham sahifa ishlaydi) ----------
@@ -127,14 +149,72 @@ export function bumpCategory(flow: Flow, code: string) {
   lsSet(`ks_cat_${flow}`, JSON.stringify(counts));
 }
 
+// ---------- Tahrirlash: yozuv ma'lumoti sessionStorage orqali formaga uzatiladi ----------
+export type EditPayload = {
+  id: string; kind: Kind; accountId: string; amount: number; rate: number | null; date: string;
+  category: string;       // oddiy: toifa kodi; shaxsiy: shaxsiy toifa kodi; oylik: oylik toifa kodi
+  note: string;           // erkin izoh (ism/oy prefiksisiz)
+  employeeName?: string; month?: number; // faqat oylik
+};
+const EDIT_KEY = 'ks_edit';
+
+export function stashEdit(p: EditPayload) {
+  try { sessionStorage.setItem(EDIT_KEY, JSON.stringify({ p, t: Date.now() })); } catch { /* ignore */ }
+}
+export function clearEdit() {
+  try { sessionStorage.removeItem(EDIT_KEY); } catch { /* ignore */ }
+}
+// Faqat shu turdagi va 10 daqiqadan eskirmagan tahrir qaytariladi (eskirgan qoldiq yangi kiritishni buzmasin).
+export function peekEdit(kinds: Kind[]): EditPayload | null {
+  try {
+    const raw = sessionStorage.getItem(EDIT_KEY);
+    if (!raw) return null;
+    const { p, t } = JSON.parse(raw) as { p: EditPayload; t: number };
+    if (Date.now() - t > 10 * 60 * 1000 || !kinds.includes(p.kind)) return null;
+    return p;
+  } catch { return null; }
+}
+
+// Izohdagi "Ism — Oy oyi uchun — izoh" qismini ajratish (kompyuter kassasi shakli bilan bir xil).
+export function parsePrefixedComment(c: string | null): { name: string; month: number; note: string } | null {
+  if (!c) return null;
+  const m = c.match(/^(.+?) — (\S+) oyi uchun(?: — (.*))?$/);
+  if (!m) return null;
+  const mi = MONTHS.indexOf(m[2]);
+  return mi < 0 ? null : { name: m[1], month: mi + 1, note: m[3] || '' };
+}
+
+export function routeForKind(kind: Kind): string {
+  return kind === 'income' ? '/kassir/kirim' : kind === 'expense' ? '/kassir/chiqim' : kind === 'personal' ? '/kassir/shaxsiy' : '/kassir/oylik';
+}
+
+// Ro'yxatdagi qatordan tahrir ma'lumotini yasaydi (tahrirlab bo'lmasa null).
+export function editPayloadOf(t: KDay): EditPayload | null {
+  if (!t.can_edit) return null;
+  const amount = t.income > 0 ? t.income : t.expense;
+  const base = { id: t.id, accountId: t.account_id, amount, rate: t.currency === 'USD' ? t.exchange_rate : null, date: t.txn_date };
+  if (t.kind === 'income' || t.kind === 'expense') {
+    return { ...base, kind: t.kind, category: t.category_code, note: t.comment || '' };
+  }
+  const pc = parsePrefixedComment(t.comment);
+  if (!pc) return null;
+  if (t.kind === 'personal' && t.personal_code) {
+    return { ...base, kind: 'personal', category: t.personal_code, note: pc.note };
+  }
+  if (t.kind === 'salary') {
+    return { ...base, kind: 'salary', category: t.category_code, note: pc.note, employeeName: pc.name, month: pc.month };
+  }
+  return null;
+}
+
 // ---------- Ro'yxat uchun: almashuv (99999) ikki oyog'ini bitta qatorga birlashtirish ----------
 export type TxnRow =
-  | { kind: 'txn'; key: string; t: KTxn }
-  | { kind: 'exchange'; key: string; from: KTxn; to: KTxn; t: KTxn };
+  | { kind: 'txn'; key: string; t: KDay }
+  | { kind: 'exchange'; key: string; from: KDay; to: KDay; t: KDay };
 
-export function buildRows(txns: KTxn[]): TxnRow[] {
+export function buildRows(txns: KDay[]): TxnRow[] {
   const rows: TxnRow[] = [];
-  const pending = new Map<string, KTxn>();
+  const pending = new Map<string, KDay>();
   for (const t of txns) {
     if (t.category_code !== '99999') {
       rows.push({ kind: 'txn', key: t.id, t });

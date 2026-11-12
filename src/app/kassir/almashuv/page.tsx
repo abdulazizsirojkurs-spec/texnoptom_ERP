@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ArrowDownUp } from 'lucide-react';
 import KassirShell from '@/components/kassir/KassirShell';
-import { KAccount, rpc, fmtMoney, formatAmountInput, parseAmount, BIG_UZS, BIG_USD, RATE_MIN, RATE_MAX } from '@/lib/kassir';
+import { DateField } from '@/components/kassir/parts';
+import { KAccount, rpc, fmtMoney, formatAmountInput, parseAmount, tashkentToday, dateLabel, BIG_UZS, BIG_USD, RATE_MIN, RATE_MAX } from '@/lib/kassir';
 
 // Hisoblar orasida pul o'tkazish / valyuta almashtirish (masalan Naqd → USD).
 export default function KassirAlmashuvPage() {
@@ -17,6 +18,7 @@ export default function KassirAlmashuvPage() {
   const [fromStr, setFromStr] = useState('');
   const [toStr, setToStr] = useState('');
   const [comment, setComment] = useState('');
+  const [date, setDate] = useState(tashkentToday());
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -59,14 +61,15 @@ export default function KassirAlmashuvPage() {
     setSubmitting(true);
     setError('');
     try {
-      await rpc('kassir_exchange', {
+      await rpc('kassir_save_exchange', {
         p_from: from.id,
         p_to: to.id,
         p_from_amount: fromAmt,
         p_to_amount: toAmt,
         p_comment: comment.trim() || null,
+        p_date: date,
       });
-      setDone(`${fmtMoney(fromAmt, from.currency)} (${from.name}) → ${fmtMoney(toAmt, to.currency)} (${to.name})`);
+      setDone(`${fmtMoney(fromAmt, from.currency)} (${from.name}) → ${fmtMoney(toAmt, to.currency)} (${to.name})${date !== tashkentToday() ? ` · ${dateLabel(date, tashkentToday())}` : ''}`);
     } catch (e) {
       const m = (e as Error).message;
       setError(/Aloqa xatosi/.test(m) ? m + ". Saqlanganini bosh sahifadagi ro'yxatdan tekshiring, keyin qayta urining." : m);
@@ -163,6 +166,8 @@ export default function KassirAlmashuvPage() {
               )}
             </div>
           )}
+
+          <DateField value={date} onChange={setDate} />
 
           <div className="ks-field">
             <label className="ks-label">Izoh (ixtiyoriy)</label>
