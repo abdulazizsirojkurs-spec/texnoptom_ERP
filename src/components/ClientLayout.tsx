@@ -14,6 +14,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
 
   const isLoginPage = pathname === '/login';
   const isSkladRoute = pathname.startsWith('/sklad');
+  const isKassirRoute = pathname === '/kassir' || pathname.startsWith('/kassir/');
   // Krayin CRM'dagi "Avans/Buyurtma qabul qilindi" modalida iframe sifatida
   // ochiladigan tor rejim — admin sidebar/mobile-header ko'rsatilmaydi.
   const isEmbedRoute = pathname === '/sales/embed';
@@ -25,6 +26,13 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
       router.push('/sklad');
     }
   }, [loading, user, role, isSkladRoute, isLoginPage, router]);
+
+  // Kassir (kassa bilan ishlaydigan xodim) faqat /kassir bo'limini ko'radi.
+  useEffect(() => {
+    if (!loading && user && role === 'kassir' && !isKassirRoute && !isLoginPage) {
+      router.push('/kassir');
+    }
+  }, [loading, user, role, isKassirRoute, isLoginPage, router]);
 
   if (loading) {
     return (
@@ -54,6 +62,14 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   // ko'rsatmaslik uchun hech narsa render qilmaymiz.
   if (role === 'skladchi' && !isSkladRoute) {
     return null;
+  }
+  if (role === 'kassir' && !isKassirRoute) {
+    return null;
+  }
+
+  // /kassir bo'limi — o'zining mobil interfeysi bor, admin sidebar/header ko'rsatilmaydi.
+  if (isKassirRoute) {
+    return <>{children}</>;
   }
 
   // /sklad bo'limi — o'zining alohida, minimal mobil interfeysi bor,

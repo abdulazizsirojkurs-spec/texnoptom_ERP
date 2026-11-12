@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   Home, Package, ShoppingCart, FileText, Wallet, TrendingUp, ArrowDownUp,
   Scale, Truck, Users, HandCoins, Award, CalendarClock, Building2, Settings,
-  LayoutDashboard, X, LogOut, Bot, Banknote, PiggyBank,
+  LayoutDashboard, X, LogOut, Bot, Banknote, PiggyBank, Smartphone,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
@@ -74,6 +74,7 @@ export default function Sidebar({ isOpen = false, onClose }: { isOpen?: boolean,
             <div className="nav-group-label">Moliya</div>
             <NavLink href="/finance" icon={LayoutDashboard}>Moliya paneli</NavLink>
             <NavLink href="/finance/kassa" icon={Wallet}>Kassa</NavLink>
+            {role === 'admin' && <NavLink href="/kassir" icon={Smartphone}>Kassa (mobil)</NavLink>}
             <NavLink href="/finance/sklad-tolovlari" icon={Banknote}>Sklad to&apos;lovlari</NavLink>
             <NavLink href="/finance/kassa/balance" icon={Scale}>Kassa nazorati</NavLink>
             <NavLink href="/finance/reports/pnl" icon={TrendingUp}>P&amp;L (Foyda)</NavLink>

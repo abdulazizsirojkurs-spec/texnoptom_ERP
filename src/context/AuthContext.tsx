@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 
 type AuthContextType = {
   user: any;
-  role: 'admin' | 'skladchi' | 'sotuvchi' | 'buxgalter' | null;
+  role: 'admin' | 'skladchi' | 'sotuvchi' | 'buxgalter' | 'kassir' | null;
   loading: boolean;
   signOut: () => Promise<void>;
 };
@@ -14,7 +14,7 @@ const AuthContext = createContext<AuthContextType>({ user: null, role: null, loa
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<any>(null);
-  const [role, setRole] = useState<'admin' | 'skladchi' | 'sotuvchi' | 'buxgalter' | null>(null);
+  const [role, setRole] = useState<'admin' | 'skladchi' | 'sotuvchi' | 'buxgalter' | 'kassir' | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();

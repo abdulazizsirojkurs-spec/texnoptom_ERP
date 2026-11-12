@@ -14,7 +14,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.push(role === 'skladchi' ? '/sklad' : '/warehouse');
+      router.push(role === 'skladchi' ? '/sklad' : role === 'kassir' ? '/kassir' : '/warehouse');
     }
   }, [user, role, authLoading, router]);
 
